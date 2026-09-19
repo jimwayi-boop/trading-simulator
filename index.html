@@ -67,8 +67,8 @@
 
     <div class="row">
       <div>
-        <label>每次仓位 (%)</label>
-        <input type="number" id="baseSize" value="5" step="0.5">
+        <label>基础仓位 (%)</label>
+        <input type="number" id="baseSize" value="1" step="0.5">
       </div>
       <div>
         <label>止损 (%)</label>
@@ -86,6 +86,20 @@
         <input type="number" id="momentumThreshold" value="0.35" step="0.05">
       </div>
     </div>
+
+    <div class="row">
+      <div>
+        <label>加仓触发 (%)</label>
+        <input type="number" id="addPositionThreshold" value="2" step="0.5">
+      </div>
+      <div>
+        <label>加仓比例 (%)</label>
+        <input type="number" id="addPositionSize" value="5" step="0.5">
+      </div>
+    </div>
+
+    <label>最大持仓占总权益 (%)</label>
+    <input type="number" id="maxExposure" value="20" step="5">
 
     <label>ATR% 过滤阈值</label>
     <input type="number" id="atrThreshold" value="1.5" step="0.1">
@@ -242,19 +256,17 @@ function updateNewsStatus(status, symbol, result) {
 // 3. Alpaca 行情数据
 // ═══════════════════════════════════════════════
 async function fetchLatestBars(symbols, timeframe) {
-  // 获取每只股票的最新 K 线（用于动量计算需要至少 3 根）
   const tfMap = { 1: '1Min', 5: '5Min' };
   const results = {};
 
   for (const sym of symbols) {
-    const url = `${WORKER_URL}/alpaca-data/v2/stocks/${sym}/bars?timeframe=${tfMap[timeframe]}&limit=25&feed=iex&sort=desc`;
+    const url = `${WORKER_URL}/alpaca-data/v2/stocks/${sym}/bars?timeframe=${tfMap[timeframe]}&limit=30&feed=iex&sort=desc`;
     const resp = await fetch(url);
     if (!resp.ok) {
       log(`获取 ${sym} 行情失败: ${resp.status}`, 'sell');
       continue;
     }
     const json = await resp.json();
-    // Alpaca 返回 desc 排序，反转成 asc
     const bars = (json.bars || []).reverse().map(b => ({
       time: Math.floor(new Date(b.t).getTime() / 1000),
       open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v
@@ -267,31 +279,18 @@ async function fetchLatestBars(symbols, timeframe) {
 // ═══════════════════════════════════════════════
 // 4. Alpaca 交易操作
 // ═══════════════════════════════════════════════
-
-/**
- * 获取账户信息
- * GET /v2/account
- */
 async function fetchAccount() {
   const resp = await fetch(`${WORKER_URL}/alpaca-trade/v2/account`);
   if (!resp.ok) throw new Error(`账户 API ${resp.status}`);
   return await resp.json();
 }
 
-/**
- * 获取所有持仓
- * GET /v2/positions
- */
 async function fetchPositions() {
   const resp = await fetch(`${WORKER_URL}/alpaca-trade/v2/positions`);
   if (!resp.ok) throw new Error(`持仓 API ${resp.status}`);
   return await resp.json();
 }
 
-/**
- * 提交市价订单
- * POST /v2/orders
- */
 async function submitOrder(symbol, qty, side, type = 'market', timeInForce = 'day') {
   const body = {
     symbol,
@@ -314,10 +313,6 @@ async function submitOrder(symbol, qty, side, type = 'market', timeInForce = 'da
   return await resp.json();
 }
 
-/**
- * 平仓指定标的（卖出全部持仓）
- * DELETE /v2/positions/{symbol}
- */
 async function closePosition(symbol) {
   const resp = await fetch(`${WORKER_URL}/alpaca-trade/v2/positions/${symbol}`, {
     method: 'DELETE'
@@ -329,9 +324,6 @@ async function closePosition(symbol) {
   return await resp.json();
 }
 
-/**
- * 获取最近订单
- */
 async function fetchRecentOrders() {
   const resp = await fetch(`${WORKER_URL}/alpaca-trade/v2/orders?status=all&limit=10&direction=desc`);
   if (!resp.ok) throw new Error(`订单 API ${resp.status}`);
@@ -339,7 +331,60 @@ async function fetchRecentOrders() {
 }
 
 // ═══════════════════════════════════════════════
-// 5. 策略核心：单次循环
+// 5. 拆单执行
+// ═══════════════════════════════════════════════
+async function submitSplitOrder(symbol, totalQty, side) {
+  const parts = 3;
+  const qtyPerPart = totalQty / parts;
+  if (qtyPerPart < 0.0001) {
+    // 数量太小，直接下一单
+    try {
+      const order = await submitOrder(symbol, totalQty.toFixed(4), side, 'market', 'day');
+      log(`订单: ${side} ${symbol} ${totalQty.toFixed(4)} 股 | ${order.status}`, side === 'buy' ? 'buy' : 'sell');
+    } catch (e) {
+      log(`下单失败: ${e.message}`, 'sell');
+    }
+    return;
+  }
+
+  for (let i = 0; i < parts; i++) {
+    try {
+      const order = await submitOrder(symbol, qtyPerPart.toFixed(4), side, 'market', 'day');
+      log(`拆单 ${i+1}/${parts}: ${side} ${symbol} ${qtyPerPart.toFixed(4)} 股 | ${order.status}`, side === 'buy' ? 'buy' : 'sell');
+      await new Promise(r => setTimeout(r, 1000));
+    } catch (e) {
+      log(`拆单失败: ${e.message}`, 'sell');
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════
+// 6. 过去15分钟趋势确认
+// ═══════════════════════════════════════════════
+function checkUptrend(bars, timeframe) {
+  // 需要覆盖过去15分钟：5分钟K线需要3根，1分钟K线需要15根
+  const needed = Math.ceil(15 / timeframe);
+  if (bars.length < needed) return false;
+
+  const recent = bars.slice(-needed);
+  const startPrice = recent[0].open;
+  const endPrice = recent[recent.length - 1].close;
+
+  // 总体必须上升
+  if (endPrice <= startPrice) return false;
+
+  // 至少一半K线收涨
+  let upCount = 0;
+  for (let i = 1; i < recent.length; i++) {
+    if (recent[i].close > recent[i - 1].close) upCount++;
+  }
+  if (upCount < recent.length / 2) return false;
+
+  return true;
+}
+
+// ═══════════════════════════════════════════════
+// 7. 策略核心：单次循环
 // ═══════════════════════════════════════════════
 async function runOneCycle() {
   if (!running) return;
@@ -350,11 +395,14 @@ async function runOneCycle() {
   const stopLossPct = parseFloat(document.getElementById('stopLoss').value);
   const takeProfitPct = parseFloat(document.getElementById('takeProfit').value);
   const momentumThresholdPct = parseFloat(document.getElementById('momentumThreshold').value);
+  const addPositionThresholdPct = parseFloat(document.getElementById('addPositionThreshold').value);
+  const addPositionSizePct = parseFloat(document.getElementById('addPositionSize').value);
+  const maxExposurePct = parseFloat(document.getElementById('maxExposure').value);
   const atrThresholdPct = parseFloat(document.getElementById('atrThreshold').value);
 
   log(`────── 开始新一轮检查 (${symbols.length} 只标的) ──────`, 'info');
 
-  // 5.1 获取账户信息
+  // 7.1 获取账户信息
   let account;
   try {
     account = await fetchAccount();
@@ -373,7 +421,7 @@ async function runOneCycle() {
     return;
   }
 
-  // 5.2 检查持仓
+  // 7.2 检查持仓
   let positions;
   try {
     positions = await fetchPositions();
@@ -382,15 +430,16 @@ async function runOneCycle() {
     return;
   }
 
-  // 5.3 如果有持仓，检查是否应该出场
+  // 7.3 如果有持仓，检查出场和加仓
   if (positions.length > 0) {
     for (const pos of positions) {
       const sym = pos.symbol;
       const entryPrice = parseFloat(pos.avg_entry_price);
       const currentPrice = parseFloat(pos.current_price);
       const pnlPct = ((currentPrice - entryPrice) / entryPrice) * 100;
+      const qty = parseFloat(pos.qty);
 
-      log(`持仓 ${sym}: 入场 $${entryPrice.toFixed(2)} → 当前 $${currentPrice.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`, 'info');
+      log(`持仓 ${sym}: ${qty.toFixed(4)} 股 | 入场 $${entryPrice.toFixed(2)} → 当前 $${currentPrice.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`, 'info');
 
       // 止盈
       if (pnlPct >= takeProfitPct) {
@@ -426,16 +475,32 @@ async function runOneCycle() {
         } catch (e) {
           log(`${sym} 平仓失败: ${e.message}`, 'sell');
         }
+        continue;
+      }
+
+      // 加仓检查：盈利 ≥ addPositionThresholdPct 时加仓 addPositionSizePct
+      if (pnlPct >= addPositionThresholdPct) {
+        const totalEquity = parseFloat(account.equity);
+        const currentPositionValue = qty * currentPrice;
+        const addValue = totalEquity * (addPositionSizePct / 100);
+        const newExposure = (currentPositionValue + addValue) / totalEquity * 100;
+
+        if (newExposure <= maxExposurePct) {
+          const addQty = addValue / currentPrice;
+          log(`${sym} 盈利 ${pnlPct.toFixed(2)}% ≥ ${addPositionThresholdPct}%，加仓 ${addPositionSizePct}% ($${addValue.toFixed(2)})，约 ${addQty.toFixed(4)} 股`, 'buy');
+          await submitSplitOrder(sym, addQty, 'buy');
+        } else {
+          log(`${sym} 盈利达标但加仓后持仓将达 ${newExposure.toFixed(1)}% > ${maxExposurePct}%，跳过加仓`, 'warn');
+        }
       }
     }
 
-    // 有持仓时不加新仓
     updatePositionDisplay(positions);
     await updateOrdersDisplay();
     return;
   }
 
-  // 5.4 空仓时，评估所有标的
+  // 7.4 空仓时，评估所有标的
   const barsMap = await fetchLatestBars(symbols, timeframe);
 
   const candidates = [];
@@ -493,7 +558,7 @@ async function runOneCycle() {
     const momentumScore = Math.min(momentumPct / 5, 1);
     const composite = news.score * 0.6 + momentumScore * 0.4;
 
-    candidates.push({ sym, price, composite, momentumPct, newsScore: news.score });
+    candidates.push({ sym, price, composite, momentumPct, newsScore: news.score, bars });
     log(`${sym} 候选: 综合分 ${composite.toFixed(3)} (情绪 ${news.score.toFixed(2)}, 动量 ${momentumPct.toFixed(2)}%)`, 'info');
   }
 
@@ -508,30 +573,31 @@ async function runOneCycle() {
   candidates.sort((a, b) => b.composite - a.composite);
   const best = candidates[0];
 
-  // 计算仓位
+  // 趋势确认：过去15分钟是否总体上升
+  const trendOk = checkUptrend(best.bars, timeframe);
+  if (!trendOk) {
+    log(`${best.sym} 综合分最高，但过去15分钟趋势不符合要求（未持续上升或波动后总体上升），跳过买入`, 'warn');
+    updatePositionDisplay([]);
+    await updateOrdersDisplay();
+    return;
+  }
+
+  // 计算仓位（1%）
   const totalEquity = parseFloat(account.equity);
   const positionValue = totalEquity * (baseSizePct / 100);
-
-  // 计算股数（支持碎股）
   const slippage = SLIPPAGE_MAP[best.sym] || 0.001;
   const effectivePrice = best.price * (1 + slippage);
   const qty = positionValue / effectivePrice;
 
   log(`>>> 买入 ${best.sym}: ${qty.toFixed(4)} 股 @ 约 $${effectivePrice.toFixed(2)} (综合分 ${best.composite.toFixed(3)})`, 'buy');
-
-  try {
-    const order = await submitOrder(best.sym, qty.toFixed(4), 'buy', 'market', 'day');
-    log(`订单已提交: ${order.id} | 状态: ${order.status}`, 'buy');
-  } catch (e) {
-    log(`下单失败: ${e.message}`, 'sell');
-  }
+  await submitSplitOrder(best.sym, qty, 'buy');
 
   updatePositionDisplay([]);
   await updateOrdersDisplay();
 }
 
 // ═══════════════════════════════════════════════
-// 6. 界面更新
+// 8. 界面更新
 // ═══════════════════════════════════════════════
 function updatePositionDisplay(positions) {
   const el = document.getElementById('positionInfo');
@@ -571,7 +637,7 @@ async function updateOrdersDisplay() {
 }
 
 // ═══════════════════════════════════════════════
-// 7. 循环控制
+// 9. 循环控制
 // ═══════════════════════════════════════════════
 function startLoop() {
   const intervalMin = parseInt(document.getElementById('interval').value);
@@ -583,17 +649,14 @@ function startLoop() {
 
   log(`实时交易已启动 | 循环间隔: ${intervalMin} 分钟`, 'buy');
 
-  // 立即执行第一次
   runOneCycle().catch(e => log(`循环错误: ${e.message}`, 'sell'));
 
-  // 设置定时器
   timerInterval = setInterval(() => {
     if (running) {
       runOneCycle().catch(e => log(`循环错误: ${e.message}`, 'sell'));
     }
   }, intervalMs);
 
-  // 倒计时显示
   secondsUntilNext = intervalMin * 60;
   countdownInterval = setInterval(() => {
     if (!running) return;
@@ -617,7 +680,7 @@ function stopLoop() {
 }
 
 // ═══════════════════════════════════════════════
-// 8. 初始化
+// 10. 初始化
 // ═══════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnStart').addEventListener('click', startLoop);
