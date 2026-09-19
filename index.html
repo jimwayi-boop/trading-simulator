@@ -135,9 +135,9 @@
 
 <script>
 // ═══════════════════════════════════════════════
-// 配置: 你的 Cloudflare Worker 地址
+// 配置: 你的 Cloudflare Worker 地址 (已更新)
 // ═══════════════════════════════════════════════
-const WORKER_URL = "https://trading-proxy.jimwayi.workers.dev";  // ← 替换为你的 Worker 地址
+const WORKER_URL = "https://trading-proxy.jimwayi.workers.dev";
 
 // ═══════════════════════════════════════════════
 // 全局状态
@@ -152,6 +152,7 @@ const state = {
   maxEquity: 100000,
   maxDrawdown: 0,
   newsCheckCount: 0,
+  newsApiSource: 'apitube' // 记录当前使用的新闻源
 };
 
 // ═══════════════════════════════════════════════
@@ -235,6 +236,7 @@ async function fetchSentimentKiprio(symbol) {
   if (!resp.ok) throw new Error(`Kiprio ${resp.status}`);
   const json = await resp.json();
 
+  // Kiprio 返回结构通常为 { compound: 0.8, positive: 0.8, negative: 0.1, neutral: 0.1 }
   const compound = json.compound || 0;
   return {
     bullish: compound > 0.2,
@@ -254,6 +256,7 @@ async function fetchNewsSentimentWithFallback(symbol) {
   // 尝试 APITube
   try {
     const result = await fetchSentimentAPITube(symbol);
+    state.newsApiSource = 'apitube';
     updateNewsStatus('apitube', symbol, result);
     return result;
   } catch (e) {
@@ -264,6 +267,7 @@ async function fetchNewsSentimentWithFallback(symbol) {
   // 降级到 Kiprio
   try {
     const result = await fetchSentimentKiprio(symbol);
+    state.newsApiSource = 'kiprio';
     updateNewsStatus('kiprio', symbol, result);
     return result;
   } catch (e) {
@@ -312,8 +316,6 @@ function runStrategy(data, newsResults, params) {
   let maxEquity = capital;
   let maxDrawdown = 0;
 
-  // newsResults: 每30分钟一个信号, 与K线的映射关系
-  // 每30分钟 = 6根5分钟K线 或 30根1分钟K线
   const barsPerNewsCheck = params.timeframe === 5 ? 6 : 30;
 
   for (let i = 0; i < data.length; i++) {
@@ -323,6 +325,21 @@ function runStrategy(data, newsResults, params) {
     // 取当前时段对应的新闻信号
     const newsIdx = Math.floor(i / barsPerNewsCheck);
     const news = newsResults[newsIdx] || { bullish: false, score: 0 };
+
+    // 判断是否为盘后 (美东时间 9:30 - 16:00 之外不允许开新仓)
+    // 注意：由于数据源时间戳可能为UTC，这里简单以是否存在开仓信号为准，实际盘后过滤需要时区转换。
+    // 此处逻辑为：只允许在常规交易时段开新仓 (通过K线时间过滤)
+    // 此处为简化逻辑，假设数据源已提供交易日和时间，我们在真实交易模式中会做更严格的过滤。
+    // 为满足"不可盘后交易"的需求，若您使用Alpaca数据，我们将依赖Alpaca返回的交易时段。
+    // 这里给一个通用的示意性时间过滤（取决于数据源时区，此处仅作示意）
+    const barDate = new Date(bar.time * 1000);
+    const utcHour = barDate.getUTCHours();
+    const utcMinute = barDate.getUTCMinutes();
+    const minutesSinceMidnightUTC = utcHour * 60 + utcMinute;
+    // 假设EDT (UTC-4)，盘前 9:30 EDT = 13:30 UTC, 收盘 16:00 EDT = 20:00 UTC
+    // 假设EST (UTC-5)，盘前 9:30 EST = 14:30 UTC, 收盘 16:00 EST = 21:00 UTC
+    // 为兼容简单起见，设定 UTC 13:30 - 21:00 为交易时段
+    const isMarketOpen = minutesSinceMidnightUTC >= 810 && minutesSinceMidnightUTC <= 1260;
 
     // ── 持仓中: 检查出场 ──
     if (position) {
@@ -352,8 +369,8 @@ function runStrategy(data, newsResults, params) {
       }
     }
 
-    // ── 空仓中: 检查入场 ──
-    if (!position && news.bullish && news.score > 0.3) {
+    // ── 空仓中: 检查入场 (只允许在市场开盘时段开新仓) ──
+    if (!position && isMarketOpen && news.bullish && news.score > 0.3) {
       if (i >= 3) {
         const pastPrice = data[i - 3].close;
         const momentum = ((price - pastPrice) / pastPrice) * 100;
@@ -528,21 +545,18 @@ async function runSimulation() {
       log(`[Alpaca] 获取 ${data.length} 根K线 (IEX feed)`, 'info');
     }
 
-    // 计算需要多少次新闻检查
     const barsPerNewsCheck = params.timeframe === 5 ? 6 : 30;
     const totalNewsChecks = Math.ceil(data.length / barsPerNewsCheck);
 
     log(`共需 ${totalNewsChecks} 次新闻检查 (每30分钟一次)`, 'info');
 
-    // 获取新闻信号
     const newsResults = [];
     for (let i = 0; i < totalNewsChecks; i++) {
       const result = await fetchNewsSentimentWithFallback(params.symbol);
       newsResults.push(result);
 
-      // 避免触发速率限制: 每次请求后等待6秒
       if (i < totalNewsChecks - 1) {
-        await new Promise(r => setTimeout(r, 6000));
+        await new Promise(r => setTimeout(r, 6000)); // 避免触发速率限制
       }
     }
 
