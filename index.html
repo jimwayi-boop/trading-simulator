@@ -121,6 +121,7 @@
     <button class="btn-reset" id="btnReset">重置日志</button>
 
     <div class="hint">数据源: Alpaca Paper Trading | 滑点: TSLA/AAPL/GOOGL 0.1%, ASTS 0.5%</div>
+    <div class="hint">通知: ntfy.sh 推送到手机</div>
   </div>
 
   <!-- 中面板: 账户与持仓信息 -->
@@ -154,6 +155,10 @@
 // ═══════════════════════════════════════════════
 const WORKER_URL = "https://trading-proxy.jimwayi.workers.dev";
 
+// ✅ 你的 ntfy 主题名称
+const NTFY_TOPIC = "Stocktrade-alert-2026";
+const NTFY_URL = `https://ntfy.sh/${NTFY_TOPIC}`;
+
 const SLIPPAGE_MAP = {
   TSLA: 0.001, AAPL: 0.001, GOOGL: 0.001, ASTS: 0.005
 };
@@ -184,7 +189,28 @@ function getSelectedSymbols() {
 }
 
 // ═══════════════════════════════════════════════
-// 2. 新闻情绪获取（APITube 主 + Kiprio 备）
+// 2. ntfy.sh 手机推送通知
+// ═══════════════════════════════════════════════
+async function sendNotification(title, message, priority = '3', tags = '') {
+  try {
+    const headers = {
+      'Title': title,
+      'Priority': priority,
+    };
+    if (tags) headers['Tags'] = tags;
+
+    await fetch(NTFY_URL, {
+      method: 'POST',
+      headers,
+      body: message,
+    });
+  } catch (e) {
+    console.warn('ntfy 通知发送失败:', e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// 3. 新闻情绪获取（APITube 主 + Kiprio 备）
 // ═══════════════════════════════════════════════
 async function fetchSentimentAPITube(symbol) {
   const url = `${WORKER_URL}/news/?organization.name=${symbol}&per_page=10&sort.by=sentiment.overall.score&sort.order=desc`;
@@ -253,7 +279,7 @@ function updateNewsStatus(status, symbol, result) {
 }
 
 // ═══════════════════════════════════════════════
-// 3. Alpaca 行情数据
+// 4. Alpaca 行情数据
 // ═══════════════════════════════════════════════
 async function fetchLatestBars(symbols, timeframe) {
   const tfMap = { 1: '1Min', 5: '5Min' };
@@ -277,7 +303,7 @@ async function fetchLatestBars(symbols, timeframe) {
 }
 
 // ═══════════════════════════════════════════════
-// 4. Alpaca 交易操作
+// 5. Alpaca 交易操作
 // ═══════════════════════════════════════════════
 async function fetchAccount() {
   const resp = await fetch(`${WORKER_URL}/alpaca-trade/v2/account`);
@@ -331,13 +357,12 @@ async function fetchRecentOrders() {
 }
 
 // ═══════════════════════════════════════════════
-// 5. 拆单执行
+// 6. 拆单执行
 // ═══════════════════════════════════════════════
 async function submitSplitOrder(symbol, totalQty, side) {
   const parts = 3;
   const qtyPerPart = totalQty / parts;
   if (qtyPerPart < 0.0001) {
-    // 数量太小，直接下一单
     try {
       const order = await submitOrder(symbol, totalQty.toFixed(4), side, 'market', 'day');
       log(`订单: ${side} ${symbol} ${totalQty.toFixed(4)} 股 | ${order.status}`, side === 'buy' ? 'buy' : 'sell');
@@ -359,10 +384,9 @@ async function submitSplitOrder(symbol, totalQty, side) {
 }
 
 // ═══════════════════════════════════════════════
-// 6. 过去15分钟趋势确认
+// 7. 过去15分钟趋势确认
 // ═══════════════════════════════════════════════
 function checkUptrend(bars, timeframe) {
-  // 需要覆盖过去15分钟：5分钟K线需要3根，1分钟K线需要15根
   const needed = Math.ceil(15 / timeframe);
   if (bars.length < needed) return false;
 
@@ -370,10 +394,8 @@ function checkUptrend(bars, timeframe) {
   const startPrice = recent[0].open;
   const endPrice = recent[recent.length - 1].close;
 
-  // 总体必须上升
   if (endPrice <= startPrice) return false;
 
-  // 至少一半K线收涨
   let upCount = 0;
   for (let i = 1; i < recent.length; i++) {
     if (recent[i].close > recent[i - 1].close) upCount++;
@@ -384,7 +406,7 @@ function checkUptrend(bars, timeframe) {
 }
 
 // ═══════════════════════════════════════════════
-// 7. 策略核心：单次循环
+// 8. 策略核心：单次循环
 // ═══════════════════════════════════════════════
 async function runOneCycle() {
   if (!running) return;
@@ -402,7 +424,7 @@ async function runOneCycle() {
 
   log(`────── 开始新一轮检查 (${symbols.length} 只标的) ──────`, 'info');
 
-  // 7.1 获取账户信息
+  // 8.1 获取账户信息
   let account;
   try {
     account = await fetchAccount();
@@ -418,10 +440,11 @@ async function runOneCycle() {
     log(`获取账户失败: ${e.message}`, 'sell');
     document.getElementById('accountBadge').textContent = '连接失败';
     document.getElementById('accountBadge').className = 'badge badge-error';
+    await sendNotification('⚠️ 系统错误', `获取账户失败: ${e.message}`, '4', 'warning');
     return;
   }
 
-  // 7.2 检查持仓
+  // 8.2 检查持仓
   let positions;
   try {
     positions = await fetchPositions();
@@ -430,7 +453,7 @@ async function runOneCycle() {
     return;
   }
 
-  // 7.3 如果有持仓，检查出场和加仓
+  // 8.3 如果有持仓，检查出场和加仓
   if (positions.length > 0) {
     for (const pos of positions) {
       const sym = pos.symbol;
@@ -447,8 +470,15 @@ async function runOneCycle() {
         try {
           await closePosition(sym);
           log(`${sym} 平仓成功 (止盈)`, 'buy');
+          await sendNotification(
+            '💰 止盈平仓',
+            `${sym} 盈利 ${pnlPct.toFixed(2)}%\n入场 $${entryPrice.toFixed(2)} → 出场 $${currentPrice.toFixed(2)}`,
+            '4',
+            'money_bag'
+          );
         } catch (e) {
           log(`${sym} 平仓失败: ${e.message}`, 'sell');
+          await sendNotification('⚠️ 平仓失败', `${sym} 止盈平仓失败: ${e.message}`, '5', 'warning');
         }
         continue;
       }
@@ -459,8 +489,15 @@ async function runOneCycle() {
         try {
           await closePosition(sym);
           log(`${sym} 平仓成功 (止损)`, 'sell');
+          await sendNotification(
+            '🛑 止损平仓',
+            `${sym} 亏损 ${pnlPct.toFixed(2)}%\n入场 $${entryPrice.toFixed(2)} → 出场 $${currentPrice.toFixed(2)}`,
+            '5',
+            'warning'
+          );
         } catch (e) {
           log(`${sym} 平仓失败: ${e.message}`, 'sell');
+          await sendNotification('⚠️ 平仓失败', `${sym} 止损平仓失败: ${e.message}`, '5', 'warning');
         }
         continue;
       }
@@ -472,13 +509,19 @@ async function runOneCycle() {
         try {
           await closePosition(sym);
           log(`${sym} 平仓成功 (反向信号)`, 'sell');
+          await sendNotification(
+            '🔄 反向信号平仓',
+            `${sym} 新闻转弱，平仓\n盈亏: ${pnlPct.toFixed(2)}%`,
+            '3',
+            'arrows_counterclockwise'
+          );
         } catch (e) {
           log(`${sym} 平仓失败: ${e.message}`, 'sell');
         }
         continue;
       }
 
-      // 加仓检查：盈利 ≥ addPositionThresholdPct 时加仓 addPositionSizePct
+      // 加仓检查
       if (pnlPct >= addPositionThresholdPct) {
         const totalEquity = parseFloat(account.equity);
         const currentPositionValue = qty * currentPrice;
@@ -489,6 +532,12 @@ async function runOneCycle() {
           const addQty = addValue / currentPrice;
           log(`${sym} 盈利 ${pnlPct.toFixed(2)}% ≥ ${addPositionThresholdPct}%，加仓 ${addPositionSizePct}% ($${addValue.toFixed(2)})，约 ${addQty.toFixed(4)} 股`, 'buy');
           await submitSplitOrder(sym, addQty, 'buy');
+          await sendNotification(
+            '📈 加仓执行',
+            `${sym} 盈利 ${pnlPct.toFixed(2)}%，加仓 $${addValue.toFixed(2)}（约 ${addQty.toFixed(4)} 股）`,
+            '4',
+            'chart_increasing'
+          );
         } else {
           log(`${sym} 盈利达标但加仓后持仓将达 ${newExposure.toFixed(1)}% > ${maxExposurePct}%，跳过加仓`, 'warn');
         }
@@ -500,7 +549,7 @@ async function runOneCycle() {
     return;
   }
 
-  // 7.4 空仓时，评估所有标的
+  // 8.4 空仓时，评估所有标的
   const barsMap = await fetchLatestBars(symbols, timeframe);
 
   const candidates = [];
@@ -511,7 +560,7 @@ async function runOneCycle() {
     const latest = bars[bars.length - 1];
     const price = latest.close;
 
-    // 盘后过滤（美东 9:30-16:00，UTC 13:30-21:00）
+    // 盘后过滤
     const d = new Date(latest.time * 1000);
     const minutesUTC = d.getUTCHours() * 60 + d.getUTCMinutes();
     if (minutesUTC < 810 || minutesUTC > 1260) {
@@ -526,7 +575,7 @@ async function runOneCycle() {
       continue;
     }
 
-    // ATR 过滤（过去 20 根平均振幅）
+    // ATR 过滤
     if (bars.length >= 20) {
       let atrSum = 0;
       for (let j = bars.length - 20; j < bars.length; j++) {
@@ -573,16 +622,16 @@ async function runOneCycle() {
   candidates.sort((a, b) => b.composite - a.composite);
   const best = candidates[0];
 
-  // 趋势确认：过去15分钟是否总体上升
+  // 趋势确认
   const trendOk = checkUptrend(best.bars, timeframe);
   if (!trendOk) {
-    log(`${best.sym} 综合分最高，但过去15分钟趋势不符合要求（未持续上升或波动后总体上升），跳过买入`, 'warn');
+    log(`${best.sym} 综合分最高，但过去15分钟趋势不符合要求，跳过买入`, 'warn');
     updatePositionDisplay([]);
     await updateOrdersDisplay();
     return;
   }
 
-  // 计算仓位（1%）
+  // 计算仓位
   const totalEquity = parseFloat(account.equity);
   const positionValue = totalEquity * (baseSizePct / 100);
   const slippage = SLIPPAGE_MAP[best.sym] || 0.001;
@@ -592,12 +641,22 @@ async function runOneCycle() {
   log(`>>> 买入 ${best.sym}: ${qty.toFixed(4)} 股 @ 约 $${effectivePrice.toFixed(2)} (综合分 ${best.composite.toFixed(3)})`, 'buy');
   await submitSplitOrder(best.sym, qty, 'buy');
 
+  // 发送买入通知
+  await sendNotification(
+    '🚀 买入信号',
+    `${best.sym} 买入 ${qty.toFixed(4)} 股 @ $${effectivePrice.toFixed(2)}\n` +
+    `综合分: ${best.composite.toFixed(3)}（情绪 ${best.newsScore.toFixed(2)}, 动量 ${best.momentumPct.toFixed(2)}%）\n` +
+    `仓位: $${positionValue.toFixed(2)}（${baseSizePct}%）`,
+    '4',
+    'rocket'
+  );
+
   updatePositionDisplay([]);
   await updateOrdersDisplay();
 }
 
 // ═══════════════════════════════════════════════
-// 8. 界面更新
+// 9. 界面更新
 // ═══════════════════════════════════════════════
 function updatePositionDisplay(positions) {
   const el = document.getElementById('positionInfo');
@@ -637,7 +696,7 @@ async function updateOrdersDisplay() {
 }
 
 // ═══════════════════════════════════════════════
-// 9. 循环控制
+// 10. 循环控制
 // ═══════════════════════════════════════════════
 function startLoop() {
   const intervalMin = parseInt(document.getElementById('interval').value);
@@ -648,6 +707,12 @@ function startLoop() {
   document.getElementById('btnStop').style.display = 'block';
 
   log(`实时交易已启动 | 循环间隔: ${intervalMin} 分钟`, 'buy');
+  sendNotification(
+    '▶️ 策略已启动',
+    `实时交易已启动，循环间隔 ${intervalMin} 分钟`,
+    '3',
+    'arrow_forward'
+  );
 
   runOneCycle().catch(e => log(`循环错误: ${e.message}`, 'sell'));
 
@@ -677,10 +742,11 @@ function stopLoop() {
   document.getElementById('btnStop').style.display = 'none';
   document.getElementById('timerDisplay').textContent = '--:--';
   log('实时交易已停止', 'warn');
+  sendNotification('⏹️ 策略已停止', '实时交易已手动停止', '3', 'stop_sign');
 }
 
 // ═══════════════════════════════════════════════
-// 10. 初始化
+// 11. 初始化
 // ═══════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnStart').addEventListener('click', startLoop);
@@ -691,6 +757,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   log('面板就绪。点击“开始实时交易”连接到 Alpaca Paper Trading。', 'info');
   log('注意：请确保 Alpaca 账户是 Paper Trading 模式。', 'warn');
+  log(`手机通知已配置 | 主题: ${NTFY_TOPIC}`, 'info');
+
+  // 发送测试通知（可选，如果你想测试可以取消注释下面这行）
+   sendNotification('✅ 测试通知', 'ntfy.sh 已成功连接到你的交易面板', '3', 'white_check_mark');
 });
 </script>
 </body>
