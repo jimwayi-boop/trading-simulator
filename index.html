@@ -2,12 +2,12 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>新闻驱动动量策略模拟器</title>
+<title>多标的轮动策略模拟器</title>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0d1117; color: #c9d1d9; padding: 12px; }
-  .container { display: grid; grid-template-columns: 320px 1fr 340px; gap: 12px; height: calc(100vh - 24px); }
+  .container { display: grid; grid-template-columns: 340px 1fr 340px; gap: 12px; height: calc(100vh - 24px); }
   .panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px; overflow-y: auto; }
   h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: #8b949e; margin-bottom: 10px; }
   label { display: block; font-size: 12px; color: #8b949e; margin-top: 10px; margin-bottom: 3px; }
@@ -32,12 +32,14 @@
   .badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 10px; margin-left: 6px; }
   .badge-live { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb; }
   .badge-sim { background: #d2992233; color: #d29922; border: 1px solid #d29922; }
-  .badge-warn { background: #f8514933; color: #f85149; border: 1px solid #f85149; }
-  .warning { font-size: 11px; color: #d29922; margin-top: 6px; line-height: 1.4; }
   .news-status { font-size: 11px; padding: 4px 6px; border-radius: 4px; margin-top: 6px; }
   .news-ok { background: #3fb95022; color: #3fb950; border: 1px solid #3fb95044; }
   .news-fallback { background: #d2992222; color: #d29922; border: 1px solid #d2992244; }
   .news-fail { background: #f8514922; color: #f85149; border: 1px solid #f8514944; }
+  .checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .checkbox-group label { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #c9d1d9; margin: 0; }
+  .checkbox-group input { width: auto; }
+  .hint { font-size: 10px; color: #8b949e; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -48,13 +50,13 @@
   <div class="panel">
     <h3>策略配置</h3>
 
-    <label>标的</label>
-    <select id="symbol">
-      <option value="TSLA">TSLA</option>
-      <option value="AAPL" selected>AAPL</option>
-      <option value="GOOGL">GOOGL</option>
-      <option value="ASTS">ASTS</option>
-    </select>
+    <label>监控标的（多选）</label>
+    <div class="checkbox-group" id="symbols">
+      <label><input type="checkbox" value="TSLA" checked> TSLA</label>
+      <label><input type="checkbox" value="AAPL" checked> AAPL</label>
+      <label><input type="checkbox" value="GOOGL" checked> GOOGL</label>
+      <label><input type="checkbox" value="ASTS" checked> ASTS</label>
+    </div>
 
     <label>K线周期</label>
     <select id="timeframe">
@@ -80,7 +82,7 @@
       </div>
       <div>
         <label>止损 (%)</label>
-        <input type="number" id="stopLoss" value="1" step="0.1">
+        <input type="number" id="stopLoss" value="1.5" step="0.1">
       </div>
     </div>
 
@@ -96,12 +98,16 @@
     <label>最大持仓占总资金 (%)</label>
     <input type="number" id="maxExposure" value="50" step="5">
 
+    <label>ATR% 过滤阈值（过去20根平均振幅）</label>
+    <input type="number" id="atrThreshold" value="1.5" step="0.1">
+
     <label>数据源模式</label>
     <select id="dataMode">
       <option value="sim" selected>模拟数据 (内置生成)</option>
       <option value="alpaca">Alpaca IEX 实时</option>
     </select>
 
+    <div class="hint">新闻/交易频率：每15分钟一次 | 滑点：TSLA/AAPL/GOOGL 0.1%，ASTS 0.5%</div>
     <div id="newsStatus" class="news-status news-ok">新闻数据源: 待检查</div>
     <div id="newsDetail" style="font-size:10px; color:#8b949e; margin-top:4px;"></div>
 
@@ -135,139 +141,119 @@
 
 <script>
 // ═══════════════════════════════════════════════
-// 配置: 你的 Cloudflare Worker 地址 (已更新)
+// 配置: 你的 Cloudflare Worker 地址
 // ═══════════════════════════════════════════════
 const WORKER_URL = "https://trading-proxy.jimwayi.workers.dev";
+
+// 滑点配置（按标的）
+const SLIPPAGE_MAP = {
+  TSLA: 0.001,   // 0.1%
+  AAPL: 0.001,
+  GOOGL: 0.001,
+  ASTS: 0.005    // 0.5%
+};
 
 // ═══════════════════════════════════════════════
 // 全局状态
 // ═══════════════════════════════════════════════
 const state = {
-  data: [],
-  signals: [],
-  trades: [],
-  equityCurve: [],
-  capital: 100000,
-  cash: 100000,
-  maxEquity: 100000,
-  maxDrawdown: 0,
   newsCheckCount: 0,
-  newsApiSource: 'apitube' // 记录当前使用的新闻源
+  currentSource: 'apitube'
 };
 
 // ═══════════════════════════════════════════════
-// 1. 模拟数据生成
+// 1. 模拟数据生成（多标的）
 // ═══════════════════════════════════════════════
-function generateSimulatedData(symbol, tfMinutes, count = 500) {
+function generateSimulatedData(symbols, tfMinutes, count = 500) {
   const basePrices = { TSLA: 250, AAPL: 220, GOOGL: 175, ASTS: 28 };
-  let price = basePrices[symbol] || 100;
-  const data = [];
   const now = Math.floor(Date.now() / 1000);
   const step = tfMinutes * 60;
+  const times = [];
+  for (let i = count; i > 0; i--) times.push(now - i * step);
 
-  for (let i = count; i > 0; i--) {
-    const time = now - i * step;
-    const drift = (Math.random() - 0.48) * 0.004;
-    const shock = (Math.random() - 0.5) * 0.012;
-    const ret = drift + shock;
-
-    const open = price;
-    price = price * (1 + ret);
-    const close = price;
-    const high = Math.max(open, close) * (1 + Math.random() * 0.003);
-    const low = Math.min(open, close) * (1 - Math.random() * 0.003);
-    const volume = Math.floor(50000 + Math.random() * 200000);
-
-    data.push({ time, open, high, low, close, volume });
-  }
-  return data;
+  const dataMap = {};
+  symbols.forEach(sym => {
+    let price = basePrices[sym] || 100;
+    dataMap[sym] = times.map(time => {
+      const drift = (Math.random() - 0.48) * 0.004;
+      const shock = (Math.random() - 0.5) * 0.012;
+      const ret = drift + shock;
+      const open = price;
+      price = price * (1 + ret);
+      const close = price;
+      const high = Math.max(open, close) * (1 + Math.random() * 0.003);
+      const low = Math.min(open, close) * (1 - Math.random() * 0.003);
+      const volume = Math.floor(50000 + Math.random() * 200000);
+      return { time, open, high, low, close, volume };
+    });
+  });
+  return dataMap;
 }
 
 // ═══════════════════════════════════════════════
-// 2. 新闻情绪获取 (APITube 主 + Kiprio 备)
+// 2. 模拟新闻信号（每15分钟一个）
 // ═══════════════════════════════════════════════
+function generateSimulatedNews(symbols, barsPerNewsCheck, totalBars) {
+  const newsMap = {};
+  symbols.forEach(sym => {
+    const arr = [];
+    for (let i = 0; i < totalBars; i += barsPerNewsCheck) {
+      const bullish = Math.random() < 0.25; // 25% 概率有利好
+      const score = bullish ? 0.5 + Math.random() * 0.5 : Math.random() * 0.3;
+      arr.push({ bullish, score });
+    }
+    newsMap[sym] = arr;
+  });
+  return newsMap;
+}
 
-/**
- * 主方案: APITube
- * 每30分钟对每只标的检查一次
- */
+// ═══════════════════════════════════════════════
+// 3. 新闻情绪获取（真实 API，带降级）—— 保留供真实交易使用
+// ═══════════════════════════════════════════════
 async function fetchSentimentAPITube(symbol) {
   const url = `${WORKER_URL}/news/?organization.name=${symbol}&per_page=10&sort.by=sentiment.overall.score&sort.order=desc`;
-
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`APITube ${resp.status}`);
   const json = await resp.json();
-
   const articles = json.results || [];
   if (articles.length === 0) return { bullish: false, score: 0, source: 'apitube' };
-
-  let totalScore = 0;
-  let count = 0;
+  let totalScore = 0, count = 0;
   articles.forEach(a => {
     if (a.sentiment && a.sentiment.overall && a.sentiment.overall.score !== undefined) {
-      totalScore += a.sentiment.overall.score;
-      count++;
+      totalScore += a.sentiment.overall.score; count++;
     }
   });
-
   const avgScore = count > 0 ? totalScore / count : 0;
-  return {
-    bullish: avgScore > 0.3,
-    score: Math.abs(avgScore),
-    source: 'apitube'
-  };
+  return { bullish: avgScore > 0.3, score: Math.abs(avgScore), source: 'apitube' };
 }
 
-/**
- * 备选方案: Kiprio
- * 把新闻标题发给 Kiprio 做情绪分析
- */
 async function fetchSentimentKiprio(symbol) {
   const url = `${WORKER_URL}/kiprio/v1/sentiment`;
-
   const resp = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      text: `${symbol} stock news recent price action`
-    })
+    body: JSON.stringify({ text: `${symbol} stock news recent price action` })
   });
-
   if (!resp.ok) throw new Error(`Kiprio ${resp.status}`);
   const json = await resp.json();
-
-  // Kiprio 返回结构通常为 { compound: 0.8, positive: 0.8, negative: 0.1, neutral: 0.1 }
   const compound = json.compound || 0;
-  return {
-    bullish: compound > 0.2,
-    score: Math.abs(compound),
-    source: 'kiprio'
-  };
+  return { bullish: compound > 0.2, score: Math.abs(compound), source: 'kiprio' };
 }
 
-/**
- * 带降级的新闻情绪获取
- * 优先 APITube, 失败或额度耗尽时自动切换到 Kiprio
- */
 async function fetchNewsSentimentWithFallback(symbol) {
   state.newsCheckCount++;
   updateNewsStatus('checking', symbol);
-
-  // 尝试 APITube
   try {
     const result = await fetchSentimentAPITube(symbol);
-    state.newsApiSource = 'apitube';
+    state.currentSource = 'apitube';
     updateNewsStatus('apitube', symbol, result);
     return result;
   } catch (e) {
     console.warn(`APITube 失败 (${symbol}):`, e.message);
-    log(`APITube 失败，降级到 Kiprio: ${symbol}`, 'info');
   }
-
-  // 降级到 Kiprio
   try {
     const result = await fetchSentimentKiprio(symbol);
-    state.newsApiSource = 'kiprio';
+    state.currentSource = 'kiprio';
     updateNewsStatus('kiprio', symbol, result);
     return result;
   } catch (e) {
@@ -280,34 +266,40 @@ async function fetchNewsSentimentWithFallback(symbol) {
 function updateNewsStatus(status, symbol, result) {
   const el = document.getElementById('newsStatus');
   const detail = document.getElementById('newsDetail');
-
   if (status === 'checking') {
     el.className = 'news-status news-ok';
     el.textContent = `新闻检查中: ${symbol}...`;
   } else if (status === 'apitube') {
     el.className = 'news-status news-ok';
-    el.textContent = `APITube 正常 | ${symbol}: ${result.bullish ? '看涨' : '中性'} (${result.score.toFixed(2)})`;
-    detail.textContent = `已检查 ${state.newsCheckCount} 次 | 每30分钟轮询一次`;
+    el.textContent = `APITube | ${symbol}: ${result.bullish ? '看涨' : '中性'} (${result.score.toFixed(2)})`;
+    detail.textContent = `已检查 ${state.newsCheckCount} 次`;
   } else if (status === 'kiprio') {
     el.className = 'news-status news-fallback';
-    el.textContent = `降级到 Kiprio | ${symbol}: ${result.bullish ? '看涨' : '中性'} (${result.score.toFixed(2)})`;
-    detail.textContent = `APITube 额度可能耗尽，已自动切换备选源`;
+    el.textContent = `Kiprio | ${symbol}: ${result.bullish ? '看涨' : '中性'} (${result.score.toFixed(2)})`;
+    detail.textContent = `APITube 可能耗尽，已降级`;
   } else {
     el.className = 'news-status news-fail';
-    el.textContent = `两个新闻源均失败 | ${symbol}`;
-    detail.textContent = '请检查 Worker 中的 API Key 配置';
+    el.textContent = `新闻源均失败 | ${symbol}`;
   }
 }
 
 // ═══════════════════════════════════════════════
-// 3. 策略引擎
+// 4. 策略引擎（多标的轮动）
 // ═══════════════════════════════════════════════
-function runStrategy(data, newsResults, params) {
+function runMultiStrategy(dataMap, newsMap, params) {
   const {
-    capital, baseSizePct, takeProfitPct, stopLossPct,
+    symbols, capital, baseSizePct, takeProfitPct, stopLossPct,
     momentumThresholdPct, addPositionThresholdPct,
-    addPositionSizePct, maxExposurePct
+    addPositionSizePct, maxExposurePct, atrThresholdPct
   } = params;
+
+  // 统一时间轴
+  const allTimes = [...new Set(symbols.flatMap(s => dataMap[s].map(b => b.time)))].sort((a,b)=>a-b);
+  const timeIndex = {};
+  symbols.forEach(sym => {
+    timeIndex[sym] = {};
+    dataMap[sym].forEach((bar, idx) => { timeIndex[sym][bar.time] = idx; });
+  });
 
   let cash = capital;
   let position = null;
@@ -316,114 +308,180 @@ function runStrategy(data, newsResults, params) {
   let maxEquity = capital;
   let maxDrawdown = 0;
 
-  const barsPerNewsCheck = params.timeframe === 5 ? 6 : 30;
+  // 预计算 ATR%
+  const atrMap = {};
+  symbols.forEach(sym => {
+    const bars = dataMap[sym];
+    atrMap[sym] = bars.map((bar, i) => {
+      if (i < 20) return null;
+      let sum = 0;
+      for (let j = i - 19; j <= i; j++) {
+        sum += ((bars[j].high - bars[j].low) / bars[j].close) * 100;
+      }
+      return sum / 20;
+    });
+  });
 
-  for (let i = 0; i < data.length; i++) {
-    const bar = data[i];
-    const price = bar.close;
+  const barsPerNewsCheck = params.timeframe === 5 ? 3 : 15; // 15分钟一次
 
-    // 取当前时段对应的新闻信号
-    const newsIdx = Math.floor(i / barsPerNewsCheck);
-    const news = newsResults[newsIdx] || { bullish: false, score: 0 };
+  for (let t = 0; t < allTimes.length; t++) {
+    const time = allTimes[t];
 
-    // 判断是否为盘后 (美东时间 9:30 - 16:00 之外不允许开新仓)
-    // 注意：由于数据源时间戳可能为UTC，这里简单以是否存在开仓信号为准，实际盘后过滤需要时区转换。
-    // 此处逻辑为：只允许在常规交易时段开新仓 (通过K线时间过滤)
-    // 此处为简化逻辑，假设数据源已提供交易日和时间，我们在真实交易模式中会做更严格的过滤。
-    // 为满足"不可盘后交易"的需求，若您使用Alpaca数据，我们将依赖Alpaca返回的交易时段。
-    // 这里给一个通用的示意性时间过滤（取决于数据源时区，此处仅作示意）
-    const barDate = new Date(bar.time * 1000);
-    const utcHour = barDate.getUTCHours();
-    const utcMinute = barDate.getUTCMinutes();
-    const minutesSinceMidnightUTC = utcHour * 60 + utcMinute;
-    // 假设EDT (UTC-4)，盘前 9:30 EDT = 13:30 UTC, 收盘 16:00 EDT = 20:00 UTC
-    // 假设EST (UTC-5)，盘前 9:30 EST = 14:30 UTC, 收盘 16:00 EST = 21:00 UTC
-    // 为兼容简单起见，设定 UTC 13:30 - 21:00 为交易时段
-    const isMarketOpen = minutesSinceMidnightUTC >= 810 && minutesSinceMidnightUTC <= 1260;
-
-    // ── 持仓中: 检查出场 ──
+    // ── 出场检查（每根K线都检查）──
     if (position) {
-      const pnlPct = ((price - position.entryPrice) / position.entryPrice) * 100;
+      const sym = position.symbol;
+      const idx = timeIndex[sym][time];
+      if (idx !== undefined) {
+        const bar = dataMap[sym][idx];
+        const price = bar.close;
+        const pnlPct = ((price - position.entryPrice) / position.entryPrice) * 100;
 
-      if (pnlPct >= takeProfitPct) {
-        cash += position.size * price;
-        trades.push({
-          ...position, exitPrice: price, exitTime: bar.time,
-          pnlPct, pnl: position.size * (price - position.entryPrice), reason: '止盈'
-        });
-        position = null;
-      } else if (pnlPct <= -stopLossPct) {
-        cash += position.size * price;
-        trades.push({
-          ...position, exitPrice: price, exitTime: bar.time,
-          pnlPct, pnl: position.size * (price - position.entryPrice), reason: '止损'
-        });
-        position = null;
-      } else if (!news.bullish && news.score < 0.15 && pnlPct < 0.5) {
-        cash += position.size * price;
-        trades.push({
-          ...position, exitPrice: price, exitTime: bar.time,
-          pnlPct, pnl: position.size * (price - position.entryPrice), reason: '反向信号'
-        });
-        position = null;
+        if (pnlPct >= takeProfitPct) {
+          const exitPrice = price * (1 - (SLIPPAGE_MAP[sym] || 0.001));
+          cash += position.size * exitPrice;
+          trades.push({ ...position, exitPrice, exitTime: time, pnlPct, pnl: position.size * (exitPrice - position.entryPrice), reason: '止盈' });
+          position = null;
+        } else if (pnlPct <= -stopLossPct) {
+          const exitPrice = price * (1 - (SLIPPAGE_MAP[sym] || 0.001));
+          cash += position.size * exitPrice;
+          trades.push({ ...position, exitPrice, exitTime: time, pnlPct, pnl: position.size * (exitPrice - position.entryPrice), reason: '止损' });
+          position = null;
+        } else {
+          const newsIdx = Math.floor(idx / barsPerNewsCheck);
+          const newsArr = newsMap[sym] || [];
+          const news = newsArr[newsIdx] || { bullish: false, score: 0 };
+          if (!news.bullish && news.score < 0.15 && pnlPct < 0.5) {
+            const exitPrice = price * (1 - (SLIPPAGE_MAP[sym] || 0.001));
+            cash += position.size * exitPrice;
+            trades.push({ ...position, exitPrice, exitTime: time, pnlPct, pnl: position.size * (exitPrice - position.entryPrice), reason: '反向信号' });
+            position = null;
+          }
+        }
       }
     }
 
-    // ── 空仓中: 检查入场 (只允许在市场开盘时段开新仓) ──
-    if (!position && isMarketOpen && news.bullish && news.score > 0.3) {
-      if (i >= 3) {
-        const pastPrice = data[i - 3].close;
-        const momentum = ((price - pastPrice) / pastPrice) * 100;
+    // ── 入场评估（每15分钟一次，且不在新闻刚发布的第一根K线）──
+    // 使用 t 索引判断是否处于新闻周期的第一根K线？简化：对于每只股票，检查其 idx % barsPerNewsCheck !== 0
+    if (!position) {
+      const candidates = [];
+      for (const sym of symbols) {
+        const idx = timeIndex[sym][time];
+        if (idx === undefined || idx < 3) continue;
+        // 避免新闻刚发布的第一根K线：idx % barsPerNewsCheck === 0 时跳过
+        if (idx % barsPerNewsCheck === 0) continue;
 
-        if (momentum >= momentumThresholdPct) {
-          const totalEquity = cash;
-          const positionValue = totalEquity * (baseSizePct / 100);
+        const bar = dataMap[sym][idx];
+        const price = bar.close;
 
-          if ((positionValue / totalEquity) * 100 <= maxExposurePct) {
-            const size = positionValue / price;
-            cash -= positionValue;
-            position = {
-              entryPrice: price, size, entryTime: bar.time,
-              symbol: params.symbol, added: false
-            };
-          }
+        // 盘后过滤（美东 9:30-16:00，简化为 UTC 13:30-21:00）
+        const d = new Date(time * 1000);
+        const minutesUTC = d.getUTCHours() * 60 + d.getUTCMinutes();
+        if (minutesUTC < 810 || minutesUTC > 1260) continue;
+
+        // 剧烈波动过滤：当前K线振幅 > 1% 则跳过
+        const barRange = ((bar.high - bar.low) / bar.close) * 100;
+        if (barRange > 1.0) continue;
+
+        // ATR 过滤
+        const atr = atrMap[sym][idx];
+        if (atr === null || atr > atrThresholdPct) continue;
+
+        // 新闻信号（每15分钟一个）
+        const newsIdx = Math.floor(idx / barsPerNewsCheck);
+        const newsArr = newsMap[sym] || [];
+        const news = newsArr[newsIdx] || { bullish: false, score: 0 };
+        if (!news.bullish || news.score <= 0.3) continue;
+
+        // 动量
+        const pastPrice = dataMap[sym][idx - 3].close;
+        const momentumPct = ((price - pastPrice) / pastPrice) * 100;
+        if (momentumPct < momentumThresholdPct) continue;
+
+        // 综合评分 = 情绪 * 0.6 + 动量分 * 0.4
+        const momentumScore = Math.min(momentumPct / 5, 1);
+        const composite = news.score * 0.6 + momentumScore * 0.4;
+
+        candidates.push({ sym, price, composite, momentumPct, newsScore: news.score });
+      }
+
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => b.composite - a.composite);
+        const best = candidates[0];
+
+        const totalEquity = cash;
+        const positionValue = totalEquity * (baseSizePct / 100);
+        if ((positionValue / totalEquity) * 100 <= maxExposurePct) {
+          const slippage = SLIPPAGE_MAP[best.sym] || 0.001;
+          const entryPrice = best.price * (1 + slippage);
+          const size = positionValue / entryPrice;
+          cash -= positionValue;
+          position = {
+            symbol: best.sym,
+            entryPrice,
+            size,
+            entryTime: time,
+            added: false
+          };
+          log(`买入 ${best.sym} @ $${entryPrice.toFixed(2)} (拆单执行) | 综合分 ${best.composite.toFixed(3)} (情绪 ${best.newsScore.toFixed(2)}, 动量 ${best.momentumPct.toFixed(2)}%)`, 'buy');
         }
       }
     }
 
     // ── 加仓 ──
     if (position && !position.added) {
-      const pnlPct = ((price - position.entryPrice) / position.entryPrice) * 100;
-      if (pnlPct >= addPositionThresholdPct) {
-        const totalEquity = cash + position.size * price;
-        const addValue = totalEquity * (addPositionSizePct / 100);
-        const newExposure = (position.size * price + addValue) / totalEquity * 100;
-
-        if (newExposure <= maxExposurePct && cash >= addValue) {
-          const addSize = addValue / price;
-          const totalSize = position.size + addSize;
-          position.entryPrice = (position.size * position.entryPrice + addValue) / totalSize;
-          position.size = totalSize;
-          position.added = true;
-          cash -= addValue;
+      const sym = position.symbol;
+      const idx = timeIndex[sym][time];
+      if (idx !== undefined) {
+        const bar = dataMap[sym][idx];
+        const price = bar.close;
+        const pnlPct = ((price - position.entryPrice) / position.entryPrice) * 100;
+        if (pnlPct >= addPositionThresholdPct) {
+          const totalEquity = cash + position.size * price;
+          const addValue = totalEquity * (addPositionSizePct / 100);
+          const newExposure = (position.size * price + addValue) / totalEquity * 100;
+          if (newExposure <= maxExposurePct && cash >= addValue) {
+            const slippage = SLIPPAGE_MAP[sym] || 0.001;
+            const addPrice = price * (1 + slippage);
+            const addSize = addValue / addPrice;
+            const totalSize = position.size + addSize;
+            position.entryPrice = (position.size * position.entryPrice + addValue) / totalSize;
+            position.size = totalSize;
+            position.added = true;
+            cash -= addValue;
+            log(`加仓 ${sym} @ $${addPrice.toFixed(2)} (拆单执行)`, 'buy');
+          }
         }
       }
     }
 
-    const equity = cash + (position ? position.size * price : 0);
-    equityCurve.push({ time: bar.time, value: equity });
+    // 记录权益
+    let equity = cash;
+    if (position) {
+      const sym = position.symbol;
+      const idx = timeIndex[sym][time];
+      if (idx !== undefined) {
+        equity += position.size * dataMap[sym][idx].close;
+      } else {
+        equity += position.size * position.entryPrice;
+      }
+    }
+    equityCurve.push({ time, value: equity });
     if (equity > maxEquity) maxEquity = equity;
     const dd = ((maxEquity - equity) / maxEquity) * 100;
     if (dd > maxDrawdown) maxDrawdown = dd;
   }
 
+  // 期末平仓
   if (position) {
-    const lastPrice = data[data.length - 1].close;
-    cash += position.size * lastPrice;
+    const sym = position.symbol;
+    const lastBar = dataMap[sym][dataMap[sym].length - 1];
+    const slippage = SLIPPAGE_MAP[sym] || 0.001;
+    const exitPrice = lastBar.close * (1 - slippage);
+    cash += position.size * exitPrice;
     trades.push({
-      ...position, exitPrice: lastPrice, exitTime: data[data.length - 1].time,
-      pnlPct: ((lastPrice - position.entryPrice) / position.entryPrice) * 100,
-      pnl: position.size * (lastPrice - position.entryPrice), reason: '期末平仓'
+      ...position, exitPrice, exitTime: lastBar.time,
+      pnlPct: ((exitPrice - position.entryPrice) / position.entryPrice) * 100,
+      pnl: position.size * (exitPrice - position.entryPrice), reason: '期末平仓'
     });
   }
 
@@ -431,14 +489,13 @@ function runStrategy(data, newsResults, params) {
 }
 
 // ═══════════════════════════════════════════════
-// 4. 图表
+// 5. 图表
 // ═══════════════════════════════════════════════
 let mainChart, candleSeries, equityChart, equitySeries;
 
 function initCharts() {
   const chartEl = document.getElementById('chart');
   const eqEl = document.getElementById('equityChart');
-
   mainChart = LightweightCharts.createChart(chartEl, {
     layout: { background: { color: '#161b22' }, textColor: '#8b949e' },
     grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
@@ -449,14 +506,12 @@ function initCharts() {
     borderUpColor: '#3fb950', borderDownColor: '#f85149',
     wickUpColor: '#3fb950', wickDownColor: '#f85149',
   });
-
   equityChart = LightweightCharts.createChart(eqEl, {
     layout: { background: { color: '#161b22' }, textColor: '#8b949e' },
     grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
     timeScale: { timeVisible: true },
   });
   equitySeries = equityChart.addLineSeries({ color: '#58a6ff', lineWidth: 2 });
-
   const ro = new ResizeObserver(() => {
     mainChart.applyOptions({ width: chartEl.clientWidth, height: chartEl.clientHeight });
     equityChart.applyOptions({ width: eqEl.clientWidth, height: eqEl.clientHeight });
@@ -464,14 +519,14 @@ function initCharts() {
   ro.observe(chartEl); ro.observe(eqEl);
 }
 
-function renderCharts(data, trades, equityCurve) {
-  candleSeries.setData(data);
+function renderCharts(dataMap, trades, equityCurve, symbols) {
+  const firstSym = symbols[0];
+  candleSeries.setData(dataMap[firstSym]);
   equitySeries.setData(equityCurve);
-
   const markers = [];
   trades.forEach(t => {
-    markers.push({ time: t.entryTime, position: 'belowBar', color: '#3fb950', shape: 'arrowUp', text: `买 ${t.size.toFixed(1)}股` });
-    markers.push({ time: t.exitTime, position: 'aboveBar', color: '#f85149', shape: 'arrowDown', text: `${t.reason} ${t.pnlPct.toFixed(1)}%` });
+    markers.push({ time: t.entryTime, position: 'belowBar', color: '#3fb950', shape: 'arrowUp', text: `买 ${t.symbol}` });
+    markers.push({ time: t.exitTime, position: 'aboveBar', color: '#f85149', shape: 'arrowDown', text: `${t.reason}` });
   });
   candleSeries.setMarkers(markers);
   mainChart.timeScale().fitContent();
@@ -479,11 +534,16 @@ function renderCharts(data, trades, equityCurve) {
 }
 
 // ═══════════════════════════════════════════════
-// 5. UI
+// 6. UI 辅助
 // ═══════════════════════════════════════════════
-function getParams() {
+function getSelectedSymbols() {
+  const checks = document.querySelectorAll('#symbols input[type="checkbox"]:checked');
+  return Array.from(checks).map(c => c.value);
+}
+
+function getParams(symbols) {
   return {
-    symbol: document.getElementById('symbol').value,
+    symbols,
     timeframe: parseInt(document.getElementById('timeframe').value),
     capital: parseFloat(document.getElementById('capital').value),
     baseSizePct: parseFloat(document.getElementById('baseSize').value),
@@ -493,6 +553,7 @@ function getParams() {
     addPositionThresholdPct: parseFloat(document.getElementById('addPositionThreshold').value),
     addPositionSizePct: parseFloat(document.getElementById('addPositionSize').value),
     maxExposurePct: parseFloat(document.getElementById('maxExposure').value),
+    atrThresholdPct: parseFloat(document.getElementById('atrThreshold').value),
   };
 }
 
@@ -502,14 +563,13 @@ function log(msg, cls = 'info') {
   div.className = `log-entry ${cls}`;
   div.textContent = msg;
   el.prepend(div);
-  if (el.children.length > 200) el.removeChild(el.lastChild);
+  if (el.children.length > 300) el.removeChild(el.lastChild);
 }
 
 function updateStats(result, params) {
   const totalReturn = ((result.finalEquity - params.capital) / params.capital) * 100;
   const wins = result.trades.filter(t => t.pnl > 0).length;
   const winRate = result.trades.length ? (wins / result.trades.length) * 100 : 0;
-
   document.getElementById('statEquity').textContent = '$' + result.finalEquity.toFixed(0);
   document.getElementById('statReturn').textContent = totalReturn.toFixed(2) + '%';
   document.getElementById('statDrawdown').textContent = result.maxDrawdown.toFixed(2) + '%';
@@ -519,10 +579,12 @@ function updateStats(result, params) {
 }
 
 // ═══════════════════════════════════════════════
-// 6. 主运行逻辑
+// 7. 主运行逻辑
 // ═══════════════════════════════════════════════
 async function runSimulation() {
-  const params = getParams();
+  const symbols = getSelectedSymbols();
+  if (symbols.length === 0) { alert('请至少选择一只股票'); return; }
+  const params = getParams(symbols);
   const mode = document.getElementById('dataMode').value;
 
   document.getElementById('btnRun').disabled = true;
@@ -530,43 +592,37 @@ async function runSimulation() {
   document.getElementById('log').innerHTML = '';
   state.newsCheckCount = 0;
 
-  let data;
+  let dataMap;
 
   try {
     if (mode === 'sim') {
       document.getElementById('modeBadge').textContent = '模拟';
       document.getElementById('modeBadge').className = 'badge badge-sim';
-      data = generateSimulatedData(params.symbol, params.timeframe, 500);
-      log(`[模拟] 生成 ${data.length} 根 ${params.timeframe}分钟 K线`, 'info');
-    } else if (mode === 'alpaca') {
+      dataMap = generateSimulatedData(symbols, params.timeframe, 500);
+      log(`[模拟] 生成 ${symbols.length} 只股票 × 500 根 K线`, 'info');
+    } else {
       document.getElementById('modeBadge').textContent = 'Alpaca IEX';
       document.getElementById('modeBadge').className = 'badge badge-live';
-      data = await fetchAlpacaBars(params.symbol, params.timeframe);
-      log(`[Alpaca] 获取 ${data.length} 根K线 (IEX feed)`, 'info');
-    }
-
-    const barsPerNewsCheck = params.timeframe === 5 ? 6 : 30;
-    const totalNewsChecks = Math.ceil(data.length / barsPerNewsCheck);
-
-    log(`共需 ${totalNewsChecks} 次新闻检查 (每30分钟一次)`, 'info');
-
-    const newsResults = [];
-    for (let i = 0; i < totalNewsChecks; i++) {
-      const result = await fetchNewsSentimentWithFallback(params.symbol);
-      newsResults.push(result);
-
-      if (i < totalNewsChecks - 1) {
-        await new Promise(r => setTimeout(r, 6000)); // 避免触发速率限制
+      dataMap = {};
+      for (const sym of symbols) {
+        dataMap[sym] = await fetchAlpacaBars(sym, params.timeframe);
+        log(`[Alpaca] 获取 ${sym} ${dataMap[sym].length} 根K线`, 'info');
       }
     }
 
-    const result = runStrategy(data, newsResults, params);
-    renderCharts(data, result.trades, result.equityCurve);
+    const barsPerNewsCheck = params.timeframe === 5 ? 3 : 15; // 15分钟
+    const totalBars = dataMap[symbols[0]].length;
+
+    const newsMap = generateSimulatedNews(symbols, barsPerNewsCheck, totalBars);
+    log(`已生成模拟新闻信号（每15分钟一个）`, 'info');
+
+    const result = runMultiStrategy(dataMap, newsMap, params);
+    renderCharts(dataMap, result.trades, result.equityCurve, symbols);
     updateStats(result, params);
 
-    result.trades.slice(-20).reverse().forEach(t => {
+    result.trades.slice(-30).reverse().forEach(t => {
       log(
-        `${new Date(t.entryTime * 1000).toLocaleString()} ${t.reason} ` +
+        `${new Date(t.entryTime * 1000).toLocaleString()} ${t.symbol} ${t.reason} ` +
         `$${t.entryPrice.toFixed(2)} → $${t.exitPrice.toFixed(2)} ` +
         `P&L: ${t.pnlPct.toFixed(2)}% ($${t.pnl.toFixed(0)})`,
         t.pnl > 0 ? 'buy' : 'sell'
@@ -585,7 +641,6 @@ async function runSimulation() {
 async function fetchAlpacaBars(symbol, tfMinutes) {
   const tfMap = { 1: '1Min', 5: '5Min' };
   const url = `${WORKER_URL}/alpaca/v2/stocks/${symbol}/bars?timeframe=${tfMap[tfMinutes]}&limit=500&feed=iex&sort=asc`;
-
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`行情 API ${resp.status}`);
   const json = await resp.json();
@@ -596,11 +651,10 @@ async function fetchAlpacaBars(symbol, tfMinutes) {
 }
 
 // ═══════════════════════════════════════════════
-// 7. 初始化
+// 8. 初始化
 // ═══════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
   initCharts();
-
   document.getElementById('btnRun').addEventListener('click', runSimulation);
   document.getElementById('btnReset').addEventListener('click', () => {
     document.getElementById('log').innerHTML = '';
