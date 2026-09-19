@@ -104,10 +104,11 @@
     <label>ATR% 过滤阈值</label>
     <input type="number" id="atrThreshold" value="1.5" step="0.1">
 
-    <label>循环间隔 (分钟)</label>
+    <label>交易检查间隔 (分钟)</label>
     <select id="interval">
+      <option value="1" selected>1 分钟</option>
       <option value="5">5 分钟</option>
-      <option value="15" selected>15 分钟</option>
+      <option value="15">15 分钟</option>
       <option value="30">30 分钟</option>
     </select>
 
@@ -122,7 +123,7 @@
 
     <div class="hint">数据源: Alpaca Paper Trading | 滑点: TSLA/AAPL/GOOGL 0.1%, ASTS 0.5%</div>
     <div class="hint">通知: ntfy.sh 推送到手机</div>
-    <div class="hint">新闻过滤: 仅保留强提及（frequency ≥ 2）</div>
+    <div class="hint">新闻每15分钟更新，交易每1分钟检查</div>
   </div>
 
   <!-- 中面板: 账户与持仓信息 -->
@@ -160,7 +161,7 @@ const WORKER_URL = "https://trading-proxy.jimwayi.workers.dev";
 const NTFY_TOPIC = "Stocktrade-alert-2026";
 const NTFY_URL = `https://ntfy.sh/${NTFY_TOPIC}`;
 
-// ✅ APITube 实体 ID 映射（已全部确定）
+// ✅ APITube 实体 ID 映射
 const APITUBE_ENTITY_ID_MAP = {
   'AAPL': '1302944',    // Apple Inc.
   'GOOGL': '1696869',   // Alphabet Inc.
@@ -168,10 +169,13 @@ const APITUBE_ENTITY_ID_MAP = {
   'ASTS': '1697714'     // AST SpaceMobile
 };
 
-// ✅ 强提及过滤阈值：文章中提及目标公司的次数 >= 此值，才纳入情绪计算
+// ✅ 强提及过滤阈值
 const ENTITY_MENTION_MIN_FREQUENCY = 2;
 
-// 滑点配置（按标的）
+// 新闻更新间隔（毫秒）—— 固定 15 分钟
+const NEWS_UPDATE_INTERVAL_MS = 15 * 60 * 1000;
+
+// 滑点配置
 const SLIPPAGE_MAP = {
   TSLA: 0.001, AAPL: 0.001, GOOGL: 0.001, ASTS: 0.005
 };
@@ -183,6 +187,10 @@ let running = false;
 let timerInterval = null;
 let countdownInterval = null;
 let secondsUntilNext = 0;
+
+// 新闻缓存：{ symbol: { bullish, score, source, articlesUsed, totalArticles, usedStrongFilter, updatedAt } }
+let newsCache = {};
+let lastNewsFetchTime = 0;
 
 // ═══════════════════════════════════════════════
 // 1. 工具函数
@@ -206,17 +214,9 @@ function getSelectedSymbols() {
 // ═══════════════════════════════════════════════
 async function sendNotification(title, message, priority = '3', tags = '') {
   try {
-    const headers = {
-      'Title': title,
-      'Priority': priority,
-    };
+    const headers = { 'Title': title, 'Priority': priority };
     if (tags) headers['Tags'] = tags;
-
-    await fetch(NTFY_URL, {
-      method: 'POST',
-      headers,
-      body: message,
-    });
+    await fetch(NTFY_URL, { method: 'POST', headers, body: message });
   } catch (e) {
     console.warn('ntfy 通知发送失败:', e.message);
   }
@@ -225,11 +225,6 @@ async function sendNotification(title, message, priority = '3', tags = '') {
 // ═══════════════════════════════════════════════
 // 3. 新闻情绪获取（APITube 主 + Kiprio 备）
 // ═══════════════════════════════════════════════
-
-/**
- * 判断一篇文章是否"强提及"目标实体
- * 条件：entities 数组中存在 id 匹配的实体，且 frequency >= 阈值
- */
 function articleStronglyMentionsEntity(article, entityId, minFreq = ENTITY_MENTION_MIN_FREQUENCY) {
   if (!article.entities || !Array.isArray(article.entities)) return false;
   return article.entities.some(e =>
@@ -239,13 +234,9 @@ function articleStronglyMentionsEntity(article, entityId, minFreq = ENTITY_MENTI
 
 async function fetchSentimentAPITube(symbol) {
   const entityId = APITUBE_ENTITY_ID_MAP[symbol];
-  if (!entityId) {
-    throw new Error(`未为 ${symbol} 配置 APITube 实体 ID`);
-  }
+  if (!entityId) throw new Error(`未为 ${symbol} 配置 APITube 实体 ID`);
 
-  // ✅ 使用 entity.id 查询
   const url = `${WORKER_URL}/news/?entity.id=${entityId}&per_page=10&sort.by=sentiment.overall.score&sort.order=desc`;
-
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`APITube ${resp.status}`);
   const json = await resp.json();
@@ -254,20 +245,16 @@ async function fetchSentimentAPITube(symbol) {
     return { bullish: false, score: 0, source: 'apitube', articlesUsed: 0, totalArticles: 0 };
   }
 
-  // ✅ 强提及过滤：只保留 frequency >= 阈值的文章
   const strongArticles = articles.filter(a =>
     articleStronglyMentionsEntity(a, entityId, ENTITY_MENTION_MIN_FREQUENCY)
   );
-
-  // 如果强提及文章太少（少于2篇），降级使用全部文章，避免完全无信号
   const targetArticles = strongArticles.length >= 2 ? strongArticles : articles;
   const usedStrong = strongArticles.length >= 2;
 
   let totalScore = 0, count = 0;
   targetArticles.forEach(a => {
     if (a.sentiment && a.sentiment.overall && a.sentiment.overall.score !== undefined) {
-      totalScore += a.sentiment.overall.score;
-      count++;
+      totalScore += a.sentiment.overall.score; count++;
     }
   });
   const avgScore = count > 0 ? totalScore / count : 0;
@@ -295,42 +282,53 @@ async function fetchSentimentKiprio(symbol) {
   return { bullish: compound > 0.2, score: Math.abs(compound), source: 'kiprio' };
 }
 
+// 获取单只股票新闻（用于更新缓存）
 async function fetchNewsSentiment(symbol) {
   try {
     const result = await fetchSentimentAPITube(symbol);
-    updateNewsStatus('apitube', symbol, result);
     return result;
   } catch (e) {
     log(`APITube 失败 (${symbol}): ${e.message}，降级到 Kiprio`, 'warn');
   }
   try {
     const result = await fetchSentimentKiprio(symbol);
-    updateNewsStatus('kiprio', symbol, result);
     return result;
   } catch (e) {
     log(`Kiprio 也失败 (${symbol}): ${e.message}`, 'sell');
-    updateNewsStatus('fail', symbol);
     return { bullish: false, score: 0, source: 'none' };
   }
 }
 
-function updateNewsStatus(status, symbol, result) {
+// 更新所有标的的新闻缓存
+async function updateNewsCache(symbols) {
+  log(`正在更新新闻缓存 (${symbols.length} 只标的)...`, 'info');
+  for (const sym of symbols) {
+    const result = await fetchNewsSentiment(sym);
+    newsCache[sym] = { ...result, updatedAt: Date.now() };
+    // 简单延迟，避免速率限制
+    await new Promise(r => setTimeout(r, 1500));
+  }
+  lastNewsFetchTime = Date.now();
+  updateNewsStatusDisplay(symbols);
+  log(`新闻缓存更新完成`, 'info');
+}
+
+function updateNewsStatusDisplay(symbols) {
   const el = document.getElementById('newsStatus');
   const detail = document.getElementById('newsDetail');
-  if (status === 'apitube') {
-    el.className = 'news-status news-ok';
-    const filterInfo = result.articlesUsed !== undefined
-      ? ` [${result.articlesUsed}/${result.totalArticles}篇${result.usedStrongFilter ? '强提及' : '全部'}]`
+  const timeStr = new Date(lastNewsFetchTime).toLocaleTimeString('zh-CN', { hour12: false });
+  el.className = 'news-status news-ok';
+  const sample = symbols[0];
+  const info = newsCache[sample];
+  if (info) {
+    const filterInfo = info.articlesUsed !== undefined
+      ? ` [${info.articlesUsed}/${info.totalArticles}篇]`
       : '';
-    el.textContent = `APITube | ${symbol}: ${result.bullish ? '看涨' : '中性'} (${result.score.toFixed(2)})${filterInfo}`;
-  } else if (status === 'kiprio') {
-    el.className = 'news-status news-fallback';
-    el.textContent = `Kiprio | ${symbol}: ${result.bullish ? '看涨' : '中性'} (${result.score.toFixed(2)})`;
+    el.textContent = `新闻已更新 ${timeStr} | ${sample}: ${info.bullish ? '看涨' : '中性'} (${info.score.toFixed(2)})${filterInfo}`;
   } else {
-    el.className = 'news-status news-fail';
-    el.textContent = `新闻源均失败 | ${symbol}`;
+    el.textContent = `新闻已更新 ${timeStr}`;
   }
-  detail.textContent = `最近更新: ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+  detail.textContent = `下次更新约 ${Math.ceil((NEWS_UPDATE_INTERVAL_MS - (Date.now() - lastNewsFetchTime)) / 60000)} 分钟后`;
 }
 
 // ═══════════════════════════════════════════════
@@ -373,20 +371,12 @@ async function fetchPositions() {
 }
 
 async function submitOrder(symbol, qty, side, type = 'market', timeInForce = 'day') {
-  const body = {
-    symbol,
-    qty: String(qty),
-    side,
-    type,
-    time_in_force: timeInForce
-  };
-
+  const body = { symbol, qty: String(qty), side, type, time_in_force: timeInForce };
   const resp = await fetch(`${WORKER_URL}/alpaca-trade/v2/orders`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-
   if (!resp.ok) {
     const err = await resp.text();
     throw new Error(`下单失败 ${resp.status}: ${err.substring(0, 200)}`);
@@ -461,7 +451,7 @@ function checkUptrend(bars, timeframe) {
 }
 
 // ═══════════════════════════════════════════════
-// 8. 策略核心：单次循环
+// 8. 策略核心：单次循环（每分钟执行）
 // ═══════════════════════════════════════════════
 async function runOneCycle() {
   if (!running) return;
@@ -477,7 +467,13 @@ async function runOneCycle() {
   const maxExposurePct = parseFloat(document.getElementById('maxExposure').value);
   const atrThresholdPct = parseFloat(document.getElementById('atrThreshold').value);
 
-  log(`────── 开始新一轮检查 (${symbols.length} 只标的) ──────`, 'info');
+  // 判断是否需要更新新闻缓存（每15分钟一次）
+  const needNewsUpdate = (Date.now() - lastNewsFetchTime) >= NEWS_UPDATE_INTERVAL_MS;
+  if (needNewsUpdate) {
+    await updateNewsCache(symbols);
+  }
+
+  log(`────── 检查周期 (${symbols.length} 只标的) ──────`, 'info');
 
   // 8.1 获取账户信息
   let account;
@@ -490,7 +486,6 @@ async function runOneCycle() {
     document.getElementById('statDayPnl').textContent = (dayPnl >= 0 ? '+' : '') + '$' + dayPnl.toFixed(2);
     document.getElementById('accountBadge').textContent = '已连接';
     document.getElementById('accountBadge').className = 'badge badge-live';
-    log(`账户权益: $${parseFloat(account.equity).toFixed(2)} | 现金: $${parseFloat(account.cash).toFixed(2)}`, 'info');
   } catch (e) {
     log(`获取账户失败: ${e.message}`, 'sell');
     document.getElementById('accountBadge').textContent = '连接失败';
@@ -508,7 +503,7 @@ async function runOneCycle() {
     return;
   }
 
-  // 8.3 如果有持仓，检查出场和加仓
+  // 8.3 如果有持仓，检查出场和加仓（每分钟执行）
   if (positions.length > 0) {
     for (const pos of positions) {
       const sym = pos.symbol;
@@ -525,12 +520,7 @@ async function runOneCycle() {
         try {
           await closePosition(sym);
           log(`${sym} 平仓成功 (止盈)`, 'buy');
-          await sendNotification(
-            '💰 止盈平仓',
-            `${sym} 盈利 ${pnlPct.toFixed(2)}%\n入场 $${entryPrice.toFixed(2)} → 出场 $${currentPrice.toFixed(2)}`,
-            '4',
-            'money_bag'
-          );
+          await sendNotification('💰 止盈平仓', `${sym} 盈利 ${pnlPct.toFixed(2)}%\n入场 $${entryPrice.toFixed(2)} → 出场 $${currentPrice.toFixed(2)}`, '4', 'money_bag');
         } catch (e) {
           log(`${sym} 平仓失败: ${e.message}`, 'sell');
           await sendNotification('⚠️ 平仓失败', `${sym} 止盈平仓失败: ${e.message}`, '5', 'warning');
@@ -544,12 +534,7 @@ async function runOneCycle() {
         try {
           await closePosition(sym);
           log(`${sym} 平仓成功 (止损)`, 'sell');
-          await sendNotification(
-            '🛑 止损平仓',
-            `${sym} 亏损 ${pnlPct.toFixed(2)}%\n入场 $${entryPrice.toFixed(2)} → 出场 $${currentPrice.toFixed(2)}`,
-            '5',
-            'warning'
-          );
+          await sendNotification('🛑 止损平仓', `${sym} 亏损 ${pnlPct.toFixed(2)}%\n入场 $${entryPrice.toFixed(2)} → 出场 $${currentPrice.toFixed(2)}`, '5', 'warning');
         } catch (e) {
           log(`${sym} 平仓失败: ${e.message}`, 'sell');
           await sendNotification('⚠️ 平仓失败', `${sym} 止损平仓失败: ${e.message}`, '5', 'warning');
@@ -557,19 +542,14 @@ async function runOneCycle() {
         continue;
       }
 
-      // 反向信号检查
-      const news = await fetchNewsSentiment(sym);
-      if (!news.bullish && news.score < 0.15 && pnlPct < 0.5) {
+      // 反向信号检查（使用缓存新闻）
+      const cachedNews = newsCache[sym] || { bullish: false, score: 0 };
+      if (!cachedNews.bullish && cachedNews.score < 0.15 && pnlPct < 0.5) {
         log(`${sym} 新闻转为中性/看跌，平仓...`, 'sell');
         try {
           await closePosition(sym);
           log(`${sym} 平仓成功 (反向信号)`, 'sell');
-          await sendNotification(
-            '🔄 反向信号平仓',
-            `${sym} 新闻转弱，平仓\n盈亏: ${pnlPct.toFixed(2)}%`,
-            '3',
-            'arrows_counterclockwise'
-          );
+          await sendNotification('🔄 反向信号平仓', `${sym} 新闻转弱，平仓\n盈亏: ${pnlPct.toFixed(2)}%`, '3', 'arrows_counterclockwise');
         } catch (e) {
           log(`${sym} 平仓失败: ${e.message}`, 'sell');
         }
@@ -587,12 +567,7 @@ async function runOneCycle() {
           const addQty = addValue / currentPrice;
           log(`${sym} 盈利 ${pnlPct.toFixed(2)}% ≥ ${addPositionThresholdPct}%，加仓 ${addPositionSizePct}% ($${addValue.toFixed(2)})，约 ${addQty.toFixed(4)} 股`, 'buy');
           await submitSplitOrder(sym, addQty, 'buy');
-          await sendNotification(
-            '📈 加仓执行',
-            `${sym} 盈利 ${pnlPct.toFixed(2)}%，加仓 $${addValue.toFixed(2)}（约 ${addQty.toFixed(4)} 股）`,
-            '4',
-            'chart_increasing'
-          );
+          await sendNotification('📈 加仓执行', `${sym} 盈利 ${pnlPct.toFixed(2)}%，加仓 $${addValue.toFixed(2)}（约 ${addQty.toFixed(4)} 股）`, '4', 'chart_increasing');
         } else {
           log(`${sym} 盈利达标但加仓后持仓将达 ${newExposure.toFixed(1)}% > ${maxExposurePct}%，跳过加仓`, 'warn');
         }
@@ -604,7 +579,7 @@ async function runOneCycle() {
     return;
   }
 
-  // 8.4 空仓时，评估所有标的
+  // 8.4 空仓时，评估所有标的（每分钟执行，使用缓存新闻）
   const barsMap = await fetchLatestBars(symbols, timeframe);
 
   const candidates = [];
@@ -651,19 +626,19 @@ async function runOneCycle() {
       continue;
     }
 
-    // 新闻情绪
-    const news = await fetchNewsSentiment(sym);
-    if (!news.bullish || news.score <= 0.3) {
-      log(`${sym} 新闻不够看涨 (${news.score.toFixed(2)})，跳过`, 'info');
+    // 新闻情绪（使用缓存）
+    const cachedNews = newsCache[sym] || { bullish: false, score: 0 };
+    if (!cachedNews.bullish || cachedNews.score <= 0.3) {
+      log(`${sym} 新闻不够看涨 (${cachedNews.score.toFixed(2)})，跳过`, 'info');
       continue;
     }
 
     // 综合评分
     const momentumScore = Math.min(momentumPct / 5, 1);
-    const composite = news.score * 0.6 + momentumScore * 0.4;
+    const composite = cachedNews.score * 0.6 + momentumScore * 0.4;
 
-    candidates.push({ sym, price, composite, momentumPct, newsScore: news.score, bars });
-    log(`${sym} 候选: 综合分 ${composite.toFixed(3)} (情绪 ${news.score.toFixed(2)}, 动量 ${momentumPct.toFixed(2)}%)`, 'info');
+    candidates.push({ sym, price, composite, momentumPct, newsScore: cachedNews.score, bars });
+    log(`${sym} 候选: 综合分 ${composite.toFixed(3)} (情绪 ${cachedNews.score.toFixed(2)}, 动量 ${momentumPct.toFixed(2)}%)`, 'info');
   }
 
   if (candidates.length === 0) {
@@ -696,7 +671,6 @@ async function runOneCycle() {
   log(`>>> 买入 ${best.sym}: ${qty.toFixed(4)} 股 @ 约 $${effectivePrice.toFixed(2)} (综合分 ${best.composite.toFixed(3)})`, 'buy');
   await submitSplitOrder(best.sym, qty, 'buy');
 
-  // 发送买入通知
   await sendNotification(
     '🚀 买入信号',
     `${best.sym} 买入 ${qty.toFixed(4)} 股 @ $${effectivePrice.toFixed(2)}\n` +
@@ -761,14 +735,10 @@ function startLoop() {
   document.getElementById('btnStart').style.display = 'none';
   document.getElementById('btnStop').style.display = 'block';
 
-  log(`实时交易已启动 | 循环间隔: ${intervalMin} 分钟`, 'buy');
-  sendNotification(
-    '▶️ 策略已启动',
-    `实时交易已启动，循环间隔 ${intervalMin} 分钟`,
-    '3',
-    'arrow_forward'
-  );
+  log(`实时交易已启动 | 交易检查间隔: ${intervalMin} 分钟 | 新闻每15分钟更新`, 'buy');
+  sendNotification('▶️ 策略已启动', `实时交易已启动，检查间隔 ${intervalMin} 分钟，新闻每15分钟更新`, '3', 'arrow_forward');
 
+  // 立即执行第一次循环（会触发新闻更新）
   runOneCycle().catch(e => log(`循环错误: ${e.message}`, 'sell'));
 
   timerInterval = setInterval(() => {
@@ -814,7 +784,7 @@ document.addEventListener('DOMContentLoaded', () => {
   log('注意：请确保 Alpaca 账户是 Paper Trading 模式。', 'warn');
   log(`手机通知已配置 | 主题: ${NTFY_TOPIC}`, 'info');
   log(`APITube 实体映射: AAPL→1302944, GOOGL→1696869, TSLA→1580517, ASTS→1697714`, 'info');
-  log(`新闻过滤: 仅保留强提及（frequency ≥ ${ENTITY_MENTION_MIN_FREQUENCY}）`, 'info');
+  log(`新闻每15分钟更新一次，交易每1分钟检查一次`, 'info');
 });
 </script>
 </body>
