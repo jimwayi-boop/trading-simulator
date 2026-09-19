@@ -227,8 +227,8 @@ async function fetchSentimentAPITube(symbol) {
     throw new Error(`未为 ${symbol} 配置 APITube 实体 ID`);
   }
 
-  // ✅ 使用 organization.id 查询，而非 organization.name
-  const url = `${WORKER_URL}/news/?organization.id=${entityId}&per_page=10&sort.by=sentiment.overall.score&sort.order=desc`;
+  // ✅ 使用 entity.id 查询（已通过实测验证为正确参数）
+  const url = `${WORKER_URL}/news/?entity.id=${entityId}&per_page=10&sort.by=sentiment.overall.score&sort.order=desc`;
 
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`APITube ${resp.status}`);
