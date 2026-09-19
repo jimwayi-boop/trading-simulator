@@ -122,6 +122,7 @@
 
     <div class="hint">数据源: Alpaca Paper Trading | 滑点: TSLA/AAPL/GOOGL 0.1%, ASTS 0.5%</div>
     <div class="hint">通知: ntfy.sh 推送到手机</div>
+    <div class="hint">新闻过滤: 仅保留强提及（frequency ≥ 2）</div>
   </div>
 
   <!-- 中面板: 账户与持仓信息 -->
@@ -166,6 +167,9 @@ const APITUBE_ENTITY_ID_MAP = {
   'TSLA': '1580517',    // Tesla, Inc.
   'ASTS': '1697714'     // AST SpaceMobile
 };
+
+// ✅ 强提及过滤阈值：文章中提及目标公司的次数 >= 此值，才纳入情绪计算
+const ENTITY_MENTION_MIN_FREQUENCY = 2;
 
 // 滑点配置（按标的）
 const SLIPPAGE_MAP = {
@@ -221,29 +225,61 @@ async function sendNotification(title, message, priority = '3', tags = '') {
 // ═══════════════════════════════════════════════
 // 3. 新闻情绪获取（APITube 主 + Kiprio 备）
 // ═══════════════════════════════════════════════
+
+/**
+ * 判断一篇文章是否"强提及"目标实体
+ * 条件：entities 数组中存在 id 匹配的实体，且 frequency >= 阈值
+ */
+function articleStronglyMentionsEntity(article, entityId, minFreq = ENTITY_MENTION_MIN_FREQUENCY) {
+  if (!article.entities || !Array.isArray(article.entities)) return false;
+  return article.entities.some(e =>
+    String(e.id) === String(entityId) && (e.frequency || 0) >= minFreq
+  );
+}
+
 async function fetchSentimentAPITube(symbol) {
   const entityId = APITUBE_ENTITY_ID_MAP[symbol];
   if (!entityId) {
     throw new Error(`未为 ${symbol} 配置 APITube 实体 ID`);
   }
 
-  // ✅ 使用 entity.id 查询（已通过实测验证为正确参数）
+  // ✅ 使用 entity.id 查询
   const url = `${WORKER_URL}/news/?entity.id=${entityId}&per_page=10&sort.by=sentiment.overall.score&sort.order=desc`;
 
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`APITube ${resp.status}`);
   const json = await resp.json();
   const articles = json.results || [];
-  if (articles.length === 0) return { bullish: false, score: 0, source: 'apitube' };
+  if (articles.length === 0) {
+    return { bullish: false, score: 0, source: 'apitube', articlesUsed: 0, totalArticles: 0 };
+  }
+
+  // ✅ 强提及过滤：只保留 frequency >= 阈值的文章
+  const strongArticles = articles.filter(a =>
+    articleStronglyMentionsEntity(a, entityId, ENTITY_MENTION_MIN_FREQUENCY)
+  );
+
+  // 如果强提及文章太少（少于2篇），降级使用全部文章，避免完全无信号
+  const targetArticles = strongArticles.length >= 2 ? strongArticles : articles;
+  const usedStrong = strongArticles.length >= 2;
 
   let totalScore = 0, count = 0;
-  articles.forEach(a => {
+  targetArticles.forEach(a => {
     if (a.sentiment && a.sentiment.overall && a.sentiment.overall.score !== undefined) {
-      totalScore += a.sentiment.overall.score; count++;
+      totalScore += a.sentiment.overall.score;
+      count++;
     }
   });
   const avgScore = count > 0 ? totalScore / count : 0;
-  return { bullish: avgScore > 0.3, score: Math.abs(avgScore), source: 'apitube' };
+
+  return {
+    bullish: avgScore > 0.3,
+    score: Math.abs(avgScore),
+    source: 'apitube',
+    articlesUsed: targetArticles.length,
+    totalArticles: articles.length,
+    usedStrongFilter: usedStrong
+  };
 }
 
 async function fetchSentimentKiprio(symbol) {
@@ -283,7 +319,10 @@ function updateNewsStatus(status, symbol, result) {
   const detail = document.getElementById('newsDetail');
   if (status === 'apitube') {
     el.className = 'news-status news-ok';
-    el.textContent = `APITube | ${symbol}: ${result.bullish ? '看涨' : '中性'} (${result.score.toFixed(2)})`;
+    const filterInfo = result.articlesUsed !== undefined
+      ? ` [${result.articlesUsed}/${result.totalArticles}篇${result.usedStrongFilter ? '强提及' : '全部'}]`
+      : '';
+    el.textContent = `APITube | ${symbol}: ${result.bullish ? '看涨' : '中性'} (${result.score.toFixed(2)})${filterInfo}`;
   } else if (status === 'kiprio') {
     el.className = 'news-status news-fallback';
     el.textContent = `Kiprio | ${symbol}: ${result.bullish ? '看涨' : '中性'} (${result.score.toFixed(2)})`;
@@ -775,6 +814,7 @@ document.addEventListener('DOMContentLoaded', () => {
   log('注意：请确保 Alpaca 账户是 Paper Trading 模式。', 'warn');
   log(`手机通知已配置 | 主题: ${NTFY_TOPIC}`, 'info');
   log(`APITube 实体映射: AAPL→1302944, GOOGL→1696869, TSLA→1580517, ASTS→1697714`, 'info');
+  log(`新闻过滤: 仅保留强提及（frequency ≥ ${ENTITY_MENTION_MIN_FREQUENCY}）`, 'info');
 });
 </script>
 </body>
