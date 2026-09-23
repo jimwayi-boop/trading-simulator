@@ -32,7 +32,6 @@
   .badge-live { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb; }
   .badge-idle { background: #8b949e33; color: #8b949e; border: 1px solid #8b949e; }
   .badge-error { background: #f8514933; color: #f85149; border: 1px solid #f85149; }
-  .badge-auto { background: #d2992233; color: #d29922; border: 1px solid #d29922; }
   .news-status { font-size: 11px; padding: 4px 6px; border-radius: 4px; margin-top: 6px; }
   .news-ok { background: #3fb95022; color: #3fb950; border: 1px solid #3fb95044; }
   .news-fallback { background: #d2992222; color: #d29922; border: 1px solid #d2992244; }
@@ -46,6 +45,17 @@
   .auto-row input { width: auto; }
   .auto-row label { margin: 0; font-size: 13px; color: #c9d1d9; }
   .auto-info { font-size: 11px; color: #8b949e; margin-top: 4px; }
+
+  /* 实时价格面板样式 */
+  .price-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+  .price-card { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 8px 10px; }
+  .price-symbol { font-size: 12px; font-weight: 700; color: #58a6ff; }
+  .price-value { font-size: 16px; font-weight: 600; margin-top: 2px; }
+  .price-change { font-size: 11px; margin-top: 2px; }
+  .price-up { color: #3fb950; }
+  .price-down { color: #f85149; }
+  .price-flat { color: #8b949e; }
+  .price-updated { font-size: 10px; color: #8b949e; margin-top: 6px; text-align: right; }
 </style>
 </head>
 <body>
@@ -121,7 +131,6 @@
       <option value="5">5 分钟</option>
     </select>
 
-    <!-- 自动启停 -->
     <div class="auto-row">
       <input type="checkbox" id="autoStartStop" checked>
       <label for="autoStartStop">自动启停</label>
@@ -164,6 +173,12 @@
       <div class="stat"><div class="stat-label">总敞口 (%)</div><div class="stat-value" id="statExposure">—</div></div>
     </div>
 
+    <h3 style="margin-top:16px;">实时价格</h3>
+    <div class="price-grid" id="livePrices">
+      <div class="price-card"><div class="price-symbol">加载中...</div></div>
+    </div>
+    <div class="price-updated" id="priceUpdated">—</div>
+
     <h3 style="margin-top:16px;">当前持仓</h3>
     <div id="positionInfo" style="font-size:13px; color:#8b949e;">暂无持仓</div>
 
@@ -205,6 +220,9 @@ const NEWS_STALE_LIMIT = 30 * 60 * 1000;
 const MAX_DAILY_TRADES_PER_SYMBOL = 3;
 const COMPOSITE_HIGH_THRESHOLD = 0.8;
 
+// 实时价格刷新间隔
+const PRICE_REFRESH_INTERVAL = 30 * 1000;
+
 // ═══════════════════════════════════════════════
 // 全局状态
 // ═══════════════════════════════════════════════
@@ -214,6 +232,7 @@ let newsUpdating = false;
 let timerInterval = null;
 let countdownInterval = null;
 let autoCheckInterval = null;
+let priceRefreshInterval = null;
 let secondsUntilNext = 0;
 
 let newsCache = {};
@@ -291,6 +310,67 @@ function cleanupPositionState(sym, closed) {
 }
 
 // ═══════════════════════════════════════════════
+// 实时价格更新
+// ═══════════════════════════════════════════════
+async function updateLivePrices() {
+  const symbols = getSelectedSymbols();
+  if (symbols.length === 0) return;
+
+  try {
+    // 使用 Alpaca 快照端点一次获取多只股票的最新行情
+    const symbolsParam = symbols.join(',');
+    const url = `${WORKER_URL}/alpaca-data/v2/stocks/snapshots?symbols=${symbolsParam}&feed=iex`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      console.error('获取实时价格失败:', resp.status);
+      return;
+    }
+    const data = await resp.json();
+
+    const el = document.getElementById('livePrices');
+    const updatedEl = document.getElementById('priceUpdated');
+    const cards = [];
+
+    for (const sym of symbols) {
+      const snap = data[sym];
+      if (!snap) {
+        cards.push(`<div class="price-card">
+          <div class="price-symbol">${sym}</div>
+          <div class="price-value">—</div>
+        </div>`);
+        continue;
+      }
+
+      // 优先取最新成交价，其次取分钟K线收盘价
+      const price = snap.latestTrade?.p || snap.minuteBar?.c || snap.dailyBar?.c;
+      const prevClose = snap.prevDailyBar?.c;
+      const change = (price && prevClose) ? (price - prevClose) : 0;
+      const changePct = prevClose ? (change / prevClose) * 100 : 0;
+
+      let colorClass = 'price-flat';
+      let arrow = '·';
+      if (changePct > 0.01) { colorClass = 'price-up'; arrow = '▲'; }
+      else if (changePct < -0.01) { colorClass = 'price-down'; arrow = '▼'; }
+
+      const priceStr = price ? `$${price.toFixed(2)}` : '—';
+      const changeStr = prevClose ? `${arrow} ${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)` : '';
+
+      cards.push(`<div class="price-card">
+        <div class="price-symbol">${sym}</div>
+        <div class="price-value">${priceStr}</div>
+        <div class="price-change ${colorClass}">${changeStr}</div>
+      </div>`);
+    }
+
+    el.innerHTML = cards.join('');
+    const now = new Date().toLocaleTimeString('zh-CN', { hour12: false, timeZone: 'America/New_York' });
+    updatedEl.textContent = `更新时间: ${now} (美东)`;
+  } catch (e) {
+    console.error('实时价格更新异常:', e);
+  }
+}
+
+// ═══════════════════════════════════════════════
 // 自动启停
 // ═══════════════════════════════════════════════
 function checkAutoStartStop() {
@@ -323,7 +403,6 @@ function checkAutoStartStop() {
     return;
   }
 
-  // 自动启动
   if (!autoStartedToday && nowMin >= startMin && nowMin < stopMin) {
     autoStartedToday = true;
     log(`⏰ 自动启动触发 (美东 ${startStr})`, 'buy');
@@ -331,7 +410,6 @@ function checkAutoStartStop() {
     return;
   }
 
-  // 自动停止
   if (!autoStoppedToday && nowMin >= stopMin) {
     autoStoppedToday = true;
     log(`⏰ 自动停止触发 (美东 ${stopStr})`, 'warn');
@@ -339,7 +417,6 @@ function checkAutoStartStop() {
     return;
   }
 
-  // 更新提示
   if (!autoStartedToday && nowMin < startMin) {
     const remain = startMin - nowMin;
     infoEl.textContent = `等待自动启动：约 ${remain} 分钟后（美东 ${startStr}）`;
@@ -959,14 +1036,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 自动启停检查：每 30 秒一次
   autoCheckInterval = setInterval(checkAutoStartStop, 30 * 1000);
-  // 页面加载后立即检查一次
   checkAutoStartStop();
+
+  // 实时价格：立即刷新一次，之后每 30 秒刷新
+  updateLivePrices();
+  priceRefreshInterval = setInterval(updateLivePrices, PRICE_REFRESH_INTERVAL);
+
+  // 勾选/取消勾选标的时立即刷新价格
+  document.getElementById('symbols').addEventListener('change', updateLivePrices);
 
   log('面板就绪。自动启停已开启，默认美东 9:29 启动 / 16:02 停止。', 'info');
   log('注意：请确保 Alpaca 账户是 Paper Trading 模式。', 'warn');
   log(`手机通知已配置 | 主题: ${NTFY_TOPIC}`, 'info');
   log(`新闻源: APITube → Marketaux → Kiprio`, 'info');
   log(`多持仓模式：最多5只，单只≤10%，总≤75%`, 'info');
+  log(`实时价格面板：每30秒刷新`, 'info');
   log(`交易时段: 美东 9:30-16:00 | 高波动: 9:30-10:30, 15:00-16:00`, 'info');
 });
 </script>
