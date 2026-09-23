@@ -5,57 +5,59 @@
 <title>实时 Paper Trading 监控面板</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0d1117; color: #c9d1d9; padding: 12px; }
-  .container { display: grid; grid-template-columns: 340px 1fr 380px; gap: 10px; height: calc(100vh - 24px); }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0d1117; color: #c9d1d9; padding: 12px; font-size: 14px; }
+  .container { display: grid; grid-template-columns: 360px 1fr 400px; gap: 10px; height: calc(100vh - 24px); }
   .panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px; overflow-y: auto; }
-  h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #8b949e; margin-bottom: 6px; }
-  label { display: block; font-size: 11px; color: #8b949e; margin-top: 5px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  input, select { width: 100%; padding: 4px 5px; background: #0d1117; border: 1px solid #30363d; border-radius: 5px; color: #c9d1d9; font-size: 12px; }
+  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: #8b949e; margin-bottom: 6px; }
+  label { display: block; font-size: 12px; color: #8b949e; margin-top: 5px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  input, select { width: 100%; padding: 5px 6px; background: #0d1117; border: 1px solid #30363d; border-radius: 5px; color: #c9d1d9; font-size: 13px; }
   input:focus, select:focus { outline: none; border-color: #58a6ff; }
   .row { display: flex; gap: 5px; }
   .row > div { flex: 1; min-width: 0; }
-  button { width: 100%; padding: 7px; margin-top: 7px; border: none; border-radius: 5px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  button { width: 100%; padding: 8px; margin-top: 7px; border: none; border-radius: 5px; font-size: 14px; font-weight: 600; cursor: pointer; }
   .btn-start { background: #238636; color: #fff; }
   .btn-start:hover { background: #2ea043; }
   .btn-stop { background: #da3633; color: #fff; }
   .btn-stop:hover { background: #f85149; }
   .btn-reset { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
   .btn-reset:hover { background: #30363d; }
-  .log-entry { font-size: 11px; padding: 3px 5px; border-bottom: 1px solid #21262d; font-family: "SF Mono", monospace; }
+  .log-entry { font-size: 12px; padding: 3px 5px; border-bottom: 1px solid #21262d; font-family: "SF Mono", monospace; }
   .buy { color: #3fb950; } .sell { color: #f85149; } .info { color: #8b949e; }
   .warn { color: #d29922; }
   .stat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; margin-top: 6px; }
-  .stat { background: #0d1117; border-radius: 5px; padding: 5px 6px; }
-  .stat-label { font-size: 9px; color: #8b949e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .stat-value { font-size: 13px; font-weight: 600; margin-top: 1px; }
+  .stat { background: #0d1117; border-radius: 5px; padding: 6px 7px; }
+  .stat-label { font-size: 10px; color: #8b949e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stat-value { font-size: 14px; font-weight: 600; margin-top: 1px; }
   .profit { color: #3fb950; }
   .loss { color: #f85149; }
-  .badge { display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 8px; margin-left: 4px; }
+  .badge { display: inline-block; font-size: 10px; padding: 1px 5px; border-radius: 8px; margin-left: 4px; }
   .badge-live { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb; }
   .badge-idle { background: #8b949e33; color: #8b949e; border: 1px solid #8b949e; }
   .badge-error { background: #f8514933; color: #f85149; border: 1px solid #f85149; }
-  .news-status { font-size: 10px; padding: 3px 5px; border-radius: 4px; margin-top: 5px; }
+  .news-status { font-size: 11px; padding: 3px 5px; border-radius: 4px; margin-top: 5px; }
   .news-ok { background: #3fb95022; color: #3fb950; border: 1px solid #3fb95044; }
   .news-fallback { background: #d2992222; color: #d29922; border: 1px solid #d2992244; }
   .news-fail { background: #f8514922; color: #f85149; border: 1px solid #f8514944; }
   .checkbox-group { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
-  .checkbox-group label { display: flex; align-items: center; gap: 3px; font-size: 12px; color: #c9d1d9; margin: 0; }
+  .checkbox-group label { display: flex; align-items: center; gap: 3px; font-size: 13px; color: #c9d1d9; margin: 0; }
   .checkbox-group input { width: auto; }
-  .hint { font-size: 9px; color: #8b949e; margin-top: 3px; line-height: 1.3; }
-  .timer { font-size: 20px; font-weight: 700; color: #58a6ff; text-align: center; margin-top: 5px; }
+  .hint { font-size: 10px; color: #8b949e; margin-top: 3px; line-height: 1.3; }
+  .timer { font-size: 22px; font-weight: 700; color: #58a6ff; text-align: center; margin-top: 5px; }
   .auto-row { display: flex; align-items: center; gap: 5px; margin-top: 6px; }
   .auto-row input { width: auto; }
-  .auto-row label { margin: 0; font-size: 12px; color: #c9d1d9; }
-  .auto-info { font-size: 10px; color: #8b949e; margin-top: 3px; }
-  .price-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-top: 6px; }
-  .price-card { background: #0d1117; border: 1px solid #21262d; border-radius: 5px; padding: 5px 6px; }
-  .price-symbol { font-size: 10px; font-weight: 700; color: #58a6ff; }
+  .auto-row label { margin: 0; font-size: 13px; color: #c9d1d9; }
+  .auto-info { font-size: 11px; color: #8b949e; margin-top: 3px; }
+
+  /* 实时价格：每行 5 只，格子更小 */
+  .price-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; margin-top: 6px; }
+  .price-card { background: #0d1117; border: 1px solid #21262d; border-radius: 4px; padding: 4px 4px; text-align: center; }
+  .price-symbol { font-size: 11px; font-weight: 700; color: #58a6ff; }
   .price-value { font-size: 13px; font-weight: 600; margin-top: 1px; }
-  .price-change { font-size: 9px; margin-top: 1px; }
+  .price-change { font-size: 10px; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .price-up { color: #3fb950; }
   .price-down { color: #f85149; }
   .price-flat { color: #8b949e; }
-  .price-updated { font-size: 9px; color: #8b949e; margin-top: 3px; text-align: right; }
+  .price-updated { font-size: 10px; color: #8b949e; margin-top: 3px; text-align: right; }
 </style>
 </head>
 <body>
@@ -124,7 +126,7 @@
     <div class="auto-info" id="autoInfo">等待自动启动...</div>
 
     <div id="newsStatus" class="news-status news-ok">新闻数据源: 待检查</div>
-    <div id="newsDetail" style="font-size:9px; color:#8b949e; margin-top:3px;"></div>
+    <div id="newsDetail" style="font-size:10px; color:#8b949e; margin-top:3px;"></div>
 
     <div class="timer" id="timerDisplay">--:--</div>
 
@@ -157,10 +159,10 @@
     <div class="price-updated" id="priceUpdated">—</div>
 
     <h3 style="margin-top:10px;">当前持仓</h3>
-    <div id="positionInfo" style="font-size:12px; color:#8b949e;">暂无持仓</div>
+    <div id="positionInfo" style="font-size:13px; color:#8b949e;">暂无持仓</div>
 
     <h3 style="margin-top:10px;">最近订单</h3>
-    <div id="ordersList" style="font-size:11px; font-family:'SF Mono', monospace;"></div>
+    <div id="ordersList" style="font-size:12px; font-family:'SF Mono', monospace;"></div>
   </div>
 
   <div class="panel">
