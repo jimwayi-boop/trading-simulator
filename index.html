@@ -32,6 +32,7 @@
   .badge-live { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb; }
   .badge-idle { background: #8b949e33; color: #8b949e; border: 1px solid #8b949e; }
   .badge-error { background: #f8514933; color: #f85149; border: 1px solid #f85149; }
+  .badge-auto { background: #d2992233; color: #d29922; border: 1px solid #d29922; }
   .news-status { font-size: 11px; padding: 4px 6px; border-radius: 4px; margin-top: 6px; }
   .news-ok { background: #3fb95022; color: #3fb950; border: 1px solid #3fb95044; }
   .news-fallback { background: #d2992222; color: #d29922; border: 1px solid #d2992244; }
@@ -41,6 +42,10 @@
   .checkbox-group input { width: auto; }
   .hint { font-size: 10px; color: #8b949e; margin-top: 4px; line-height: 1.4; }
   .timer { font-size: 24px; font-weight: 700; color: #58a6ff; text-align: center; margin-top: 8px; }
+  .auto-row { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+  .auto-row input { width: auto; }
+  .auto-row label { margin: 0; font-size: 13px; color: #c9d1d9; }
+  .auto-info { font-size: 11px; color: #8b949e; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -115,6 +120,23 @@
       <option value="1" selected>1 分钟</option>
       <option value="5">5 分钟</option>
     </select>
+
+    <!-- 自动启停 -->
+    <div class="auto-row">
+      <input type="checkbox" id="autoStartStop" checked>
+      <label for="autoStartStop">自动启停</label>
+    </div>
+    <div class="row">
+      <div>
+        <label>自动开始（美东）</label>
+        <input type="time" id="autoStartTime" value="09:29">
+      </div>
+      <div>
+        <label>自动停止（美东）</label>
+        <input type="time" id="autoStopTime" value="16:02">
+      </div>
+    </div>
+    <div class="auto-info" id="autoInfo">等待自动启动...</div>
 
     <div id="newsStatus" class="news-status news-ok">新闻数据源: 待检查</div>
     <div id="newsDetail" style="font-size:10px; color:#8b949e; margin-top:4px;"></div>
@@ -191,6 +213,7 @@ let isCycling = false;
 let newsUpdating = false;
 let timerInterval = null;
 let countdownInterval = null;
+let autoCheckInterval = null;
 let secondsUntilNext = 0;
 
 let newsCache = {};
@@ -201,6 +224,10 @@ let dailyTradeCount = {};
 let currentTradeDate = '';
 let lastCloseTime = {};
 let positionHighPrice = {};
+
+// 自动启停状态
+let autoStartedToday = false;
+let autoStoppedToday = false;
 
 // ═══════════════════════════════════════════════
 // 工具函数
@@ -249,12 +276,78 @@ function getNewsInterval() {
   return isHighVolatilityPeriod() ? NEWS_INTERVAL_HIGH_VOL : NEWS_INTERVAL_NORMAL;
 }
 
+function timeStrToMinutes(str) {
+  const [h, m] = str.split(':').map(Number);
+  return h * 60 + m;
+}
+
 function cleanupPositionState(sym, closed) {
   delete positionHighPrice[sym];
   delete positionHighPrice[sym + '_added'];
   if (closed) {
     lastCloseTime[sym] = Date.now();
     dailyTradeCount[sym] = (dailyTradeCount[sym] || 0) + 1;
+  }
+}
+
+// ═══════════════════════════════════════════════
+// 自动启停
+// ═══════════════════════════════════════════════
+function checkAutoStartStop() {
+  const enabled = document.getElementById('autoStartStop').checked;
+  const infoEl = document.getElementById('autoInfo');
+
+  if (!enabled) {
+    infoEl.textContent = '自动启停已关闭';
+    return;
+  }
+
+  const today = getEasternDateString();
+  if (today !== currentTradeDate) {
+    autoStartedToday = false;
+    autoStoppedToday = false;
+  }
+
+  const startStr = document.getElementById('autoStartTime').value;
+  const stopStr = document.getElementById('autoStopTime').value;
+  const startMin = timeStrToMinutes(startStr);
+  const stopMin = timeStrToMinutes(stopStr);
+  const nowMin = getEasternMinutes();
+
+  const et = getEasternTime();
+  const day = et.getDay();
+  const isWeekday = day >= 1 && day <= 5;
+
+  if (!isWeekday) {
+    infoEl.textContent = `周末休市（美东 ${et.toLocaleDateString('zh-CN')}）`;
+    return;
+  }
+
+  // 自动启动
+  if (!autoStartedToday && nowMin >= startMin && nowMin < stopMin) {
+    autoStartedToday = true;
+    log(`⏰ 自动启动触发 (美东 ${startStr})`, 'buy');
+    if (!running) startLoop();
+    return;
+  }
+
+  // 自动停止
+  if (!autoStoppedToday && nowMin >= stopMin) {
+    autoStoppedToday = true;
+    log(`⏰ 自动停止触发 (美东 ${stopStr})`, 'warn');
+    if (running) stopLoop();
+    return;
+  }
+
+  // 更新提示
+  if (!autoStartedToday && nowMin < startMin) {
+    const remain = startMin - nowMin;
+    infoEl.textContent = `等待自动启动：约 ${remain} 分钟后（美东 ${startStr}）`;
+  } else if (autoStartedToday && !autoStoppedToday) {
+    const remain = stopMin - nowMin;
+    infoEl.textContent = `运行中：约 ${remain} 分钟后自动停止（美东 ${stopStr}）`;
+  } else if (autoStoppedToday) {
+    infoEl.textContent = `今日已自动停止，等待明天 ${startStr}（美东）`;
   }
 }
 
@@ -351,7 +444,9 @@ function updateNewsCacheAsync(symbols) {
     try {
       log(`正在后台更新新闻缓存 (${symbols.length} 只)...`, 'info');
       for (const sym of symbols) {
-        newsCache[sym] = { ...(await fetchNewsSentiment(sym)), updatedAt: Date.now() };
+        const result = await fetchNewsSentiment(sym);
+        newsCache[sym] = { ...result, updatedAt: Date.now() };
+        log(`新闻更新 ${sym}: ${result.bullish ? '看涨' : '中性'} (${result.score.toFixed(2)}) [${result.source}]`, 'info');
         await new Promise(r => setTimeout(r, 1500));
       }
       lastNewsFetchTime = Date.now();
@@ -496,7 +591,6 @@ async function runOneCycle() {
   isCycling = true;
 
   try {
-    // 每日重置
     const today = getEasternDateString();
     if (today !== currentTradeDate) {
       currentTradeDate = today;
@@ -518,7 +612,6 @@ async function runOneCycle() {
     const maxPositions = parseInt(document.getElementById('maxPositions').value);
     const atrThresholdPct = parseFloat(document.getElementById('atrThreshold').value);
 
-    // 触发新闻更新
     const newsInterval = getNewsInterval();
     if ((Date.now() - lastNewsFetchTime) >= newsInterval) {
       updateNewsCacheAsync(symbols);
@@ -526,7 +619,6 @@ async function runOneCycle() {
 
     log(`── 检查周期 (${symbols.length}只) ──`, 'info');
 
-    // 账户
     let account;
     try {
       account = await fetchAccount();
@@ -545,7 +637,6 @@ async function runOneCycle() {
       return;
     }
 
-    // 新闻失效检查
     const newsStale = (Date.now() - lastNewsFetchTime) > NEWS_STALE_LIMIT;
     if (newsStale && (Date.now() - lastStaleWarningTime > NEWS_STALE_LIMIT)) {
       lastStaleWarningTime = Date.now();
@@ -553,7 +644,6 @@ async function runOneCycle() {
       await sendNotification('⚠️ 新闻数据失效', '超过30分钟未成功更新，暂停开新仓', '4', 'warning');
     }
 
-    // 持仓
     let positions;
     try {
       positions = await fetchPositions();
@@ -565,7 +655,6 @@ async function runOneCycle() {
     const totalEquity = parseFloat(account.equity);
     const activePositions = [];
 
-    // ═══════════ 处理每个持仓 ═══════════
     for (const pos of positions) {
       const sym = pos.symbol;
       const entryPrice = parseFloat(pos.avg_entry_price);
@@ -576,7 +665,6 @@ async function runOneCycle() {
 
       log(`持仓 ${sym}: ${qty.toFixed(4)}股 | 均价$${entryPrice.toFixed(2)} → $${currentPrice.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`, 'info');
 
-      // 更新高水位
       if (!positionHighPrice[sym] || currentPrice > positionHighPrice[sym]) {
         positionHighPrice[sym] = currentPrice;
       }
@@ -586,7 +674,6 @@ async function runOneCycle() {
       const effectiveStop = Math.max(trailingStop, costStop);
       const effectiveStopPct = ((effectiveStop - entryPrice) / entryPrice) * 100;
 
-      // 止盈
       if (pnlPct >= takeProfitPct) {
         log(`${sym} 止盈 (+${pnlPct.toFixed(2)}%)`, 'buy');
         try {
@@ -598,7 +685,6 @@ async function runOneCycle() {
         continue;
       }
 
-      // 止损
       if (currentPrice <= effectiveStop) {
         log(`${sym} 止损 现价$${currentPrice.toFixed(2)} ≤ $${effectiveStop.toFixed(2)} (${effectiveStopPct.toFixed(2)}%)`, 'sell');
         try {
@@ -610,10 +696,9 @@ async function runOneCycle() {
         continue;
       }
 
-      // 反向信号
-      const cachedNews = newsCache[sym] || { bullish: false, score: 0 };
+      const cachedNews = newsCache[sym] || { bullish: false, score: 0, source: 'none' };
       if (!cachedNews.bullish && cachedNews.score < 0.15 && pnlPct < 0.5) {
-        log(`${sym} 反向信号平仓`, 'sell');
+        log(`${sym} 反向信号平仓 (新闻来源: ${cachedNews.source})`, 'sell');
         try {
           await closePosition(sym);
           cleanupPositionState(sym, true);
@@ -623,7 +708,6 @@ async function runOneCycle() {
         continue;
       }
 
-      // 加仓（最多1次）
       const posAdded = positionHighPrice[sym + '_added'];
       if (!posAdded && pnlPct >= addTriggerPct && dailyTradeCount[sym] < MAX_DAILY_TRADES_PER_SYMBOL) {
         const currentExposurePct = (marketValue / totalEquity) * 100;
@@ -653,13 +737,11 @@ async function runOneCycle() {
       activePositions.push(pos);
     }
 
-    // 更新界面
     const totalExposure = activePositions.reduce((sum, p) => sum + parseFloat(p.market_value), 0);
     const totalExposurePct = (totalExposure / totalEquity) * 100;
     document.getElementById('statCount').textContent = `${activePositions.length}/${maxPositions}`;
     document.getElementById('statExposure').textContent = totalExposurePct.toFixed(1) + '%';
 
-    // ═══════════ 入场评估 ═══════════
     if (newsStale) {
       log('新闻数据失效，跳过入场评估', 'warn');
       updatePositionDisplay(activePositions);
@@ -716,14 +798,14 @@ async function runOneCycle() {
       const momentumPct = ((price - pastPrice) / pastPrice) * 100;
       if (momentumPct < momentumThresholdPct) { log(`${sym} 动量${momentumPct.toFixed(2)}% < ${momentumThresholdPct}%`, 'info'); continue; }
 
-      const cachedNews = newsCache[sym] || { bullish: false, score: 0 };
-      if (!cachedNews.bullish || cachedNews.score <= 0.3) { log(`${sym} 新闻不够看涨(${cachedNews.score.toFixed(2)})`, 'info'); continue; }
+      const cachedNews = newsCache[sym] || { bullish: false, score: 0, source: 'none' };
+      if (!cachedNews.bullish || cachedNews.score <= 0.3) { log(`${sym} 新闻不够看涨(${cachedNews.score.toFixed(2)}) [${cachedNews.source}]`, 'info'); continue; }
 
       const momentumScore = Math.min(momentumPct / 5, 1);
       const composite = cachedNews.score * 0.6 + momentumScore * 0.4;
 
-      candidates.push({ sym, price, composite, momentumPct, newsScore: cachedNews.score, bars });
-      log(`${sym} 候选: 综合分${composite.toFixed(3)} (情绪${cachedNews.score.toFixed(2)}, 动量${momentumPct.toFixed(2)}%)`, 'info');
+      candidates.push({ sym, price, composite, momentumPct, newsScore: cachedNews.score, newsSource: cachedNews.source, bars });
+      log(`${sym} 候选: 综合分${composite.toFixed(3)} (情绪${cachedNews.score.toFixed(2)}, 动量${momentumPct.toFixed(2)}%) [${cachedNews.source}]`, 'info');
     }
 
     if (candidates.length === 0) {
@@ -822,6 +904,7 @@ async function updateOrdersDisplay() {
 // 循环控制
 // ═══════════════════════════════════════════════
 function startLoop() {
+  if (running) { log('已在运行中，忽略启动请求', 'warn'); return; }
   const intervalMin = parseInt(document.getElementById('interval').value);
   const intervalMs = intervalMin * 60 * 1000;
 
@@ -853,6 +936,7 @@ function startLoop() {
 }
 
 function stopLoop() {
+  if (!running) { log('未在运行中，忽略停止请求', 'warn'); return; }
   running = false;
   clearInterval(timerInterval);
   clearInterval(countdownInterval);
@@ -873,7 +957,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('log').innerHTML = '';
   });
 
-  log('面板就绪。点击“开始实时交易”连接到 Alpaca Paper Trading。', 'info');
+  // 自动启停检查：每 30 秒一次
+  autoCheckInterval = setInterval(checkAutoStartStop, 30 * 1000);
+  // 页面加载后立即检查一次
+  checkAutoStartStop();
+
+  log('面板就绪。自动启停已开启，默认美东 9:29 启动 / 16:02 停止。', 'info');
   log('注意：请确保 Alpaca 账户是 Paper Trading 模式。', 'warn');
   log(`手机通知已配置 | 主题: ${NTFY_TOPIC}`, 'info');
   log(`新闻源: APITube → Marketaux → Kiprio`, 'info');
