@@ -28,6 +28,8 @@
   .stat { background: #0d1117; border-radius: 6px; padding: 8px; }
   .stat-label { font-size: 11px; color: #8b949e; }
   .stat-value { font-size: 18px; font-weight: 600; }
+  .profit { color: #3fb950; }
+  .loss { color: #f85149; }
   .badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 10px; margin-left: 6px; }
   .badge-live { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb; }
   .badge-idle { background: #8b949e33; color: #8b949e; border: 1px solid #8b949e; }
@@ -45,8 +47,6 @@
   .auto-row input { width: auto; }
   .auto-row label { margin: 0; font-size: 13px; color: #c9d1d9; }
   .auto-info { font-size: 11px; color: #8b949e; margin-top: 4px; }
-
-  /* 实时价格面板样式 */
   .price-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
   .price-card { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 8px 10px; }
   .price-symbol { font-size: 12px; font-weight: 700; color: #58a6ff; }
@@ -169,6 +169,8 @@
       <div class="stat"><div class="stat-label">可用现金</div><div class="stat-value" id="statCash">—</div></div>
       <div class="stat"><div class="stat-label">持仓市值</div><div class="stat-value" id="statPositionValue">—</div></div>
       <div class="stat"><div class="stat-label">今日盈亏</div><div class="stat-value" id="statDayPnl">—</div></div>
+      <div class="stat"><div class="stat-label">今日盈亏 (%)</div><div class="stat-value" id="statDayPnlPct">—</div></div>
+      <div class="stat"><div class="stat-label">总回报率</div><div class="stat-value" id="statTotalReturn">—</div></div>
       <div class="stat"><div class="stat-label">持仓数量</div><div class="stat-value" id="statCount">—</div></div>
       <div class="stat"><div class="stat-label">总敞口 (%)</div><div class="stat-value" id="statExposure">—</div></div>
     </div>
@@ -219,9 +221,10 @@ const NEWS_INTERVAL_NORMAL = 12 * 60 * 1000;
 const NEWS_STALE_LIMIT = 30 * 60 * 1000;
 const MAX_DAILY_TRADES_PER_SYMBOL = 3;
 const COMPOSITE_HIGH_THRESHOLD = 0.8;
-
-// 实时价格刷新间隔
 const PRICE_REFRESH_INTERVAL = 30 * 1000;
+
+// 初始资金（用于计算总回报率）
+const INITIAL_CAPITAL = 100000;
 
 // ═══════════════════════════════════════════════
 // 全局状态
@@ -244,7 +247,6 @@ let currentTradeDate = '';
 let lastCloseTime = {};
 let positionHighPrice = {};
 
-// 自动启停状态
 let autoStartedToday = false;
 let autoStoppedToday = false;
 
@@ -309,6 +311,30 @@ function cleanupPositionState(sym, closed) {
   }
 }
 
+// 更新盈亏显示（金额 + 百分比），带颜色
+function updatePnlDisplay(account) {
+  const equity = parseFloat(account.equity);
+  const lastEquity = parseFloat(account.last_equity);
+  const dayPnl = equity - lastEquity;
+  const dayPnlPct = lastEquity > 0 ? (dayPnl / lastEquity) * 100 : 0;
+  const totalReturnPct = ((equity - INITIAL_CAPITAL) / INITIAL_CAPITAL) * 100;
+
+  // 今日盈亏金额
+  const dayPnlEl = document.getElementById('statDayPnl');
+  dayPnlEl.textContent = (dayPnl >= 0 ? '+' : '') + '$' + dayPnl.toFixed(2);
+  dayPnlEl.className = 'stat-value ' + (dayPnl > 0 ? 'profit' : dayPnl < 0 ? 'loss' : '');
+
+  // 今日盈亏百分比
+  const dayPnlPctEl = document.getElementById('statDayPnlPct');
+  dayPnlPctEl.textContent = (dayPnlPct >= 0 ? '+' : '') + dayPnlPct.toFixed(2) + '%';
+  dayPnlPctEl.className = 'stat-value ' + (dayPnlPct > 0 ? 'profit' : dayPnlPct < 0 ? 'loss' : '');
+
+  // 总回报率
+  const totalReturnEl = document.getElementById('statTotalReturn');
+  totalReturnEl.textContent = (totalReturnPct >= 0 ? '+' : '') + totalReturnPct.toFixed(2) + '%';
+  totalReturnEl.className = 'stat-value ' + (totalReturnPct > 0 ? 'profit' : totalReturnPct < 0 ? 'loss' : '');
+}
+
 // ═══════════════════════════════════════════════
 // 实时价格更新
 // ═══════════════════════════════════════════════
@@ -317,7 +343,6 @@ async function updateLivePrices() {
   if (symbols.length === 0) return;
 
   try {
-    // 使用 Alpaca 快照端点一次获取多只股票的最新行情
     const symbolsParam = symbols.join(',');
     const url = `${WORKER_URL}/alpaca-data/v2/stocks/snapshots?symbols=${symbolsParam}&feed=iex`;
     const resp = await fetch(url);
@@ -341,7 +366,6 @@ async function updateLivePrices() {
         continue;
       }
 
-      // 优先取最新成交价，其次取分钟K线收盘价
       const price = snap.latestTrade?.p || snap.minuteBar?.c || snap.dailyBar?.c;
       const prevClose = snap.prevDailyBar?.c;
       const change = (price && prevClose) ? (price - prevClose) : 0;
@@ -702,8 +726,10 @@ async function runOneCycle() {
       document.getElementById('statEquity').textContent = '$' + parseFloat(account.equity).toFixed(2);
       document.getElementById('statCash').textContent = '$' + parseFloat(account.cash).toFixed(2);
       document.getElementById('statPositionValue').textContent = '$' + (parseFloat(account.equity) - parseFloat(account.cash)).toFixed(2);
-      const dayPnl = parseFloat(account.equity) - parseFloat(account.last_equity);
-      document.getElementById('statDayPnl').textContent = (dayPnl >= 0 ? '+' : '') + '$' + dayPnl.toFixed(2);
+
+      // ✅ 使用新的盈亏显示函数（带颜色和百分比）
+      updatePnlDisplay(account);
+
       document.getElementById('accountBadge').textContent = '已连接';
       document.getElementById('accountBadge').className = 'badge badge-live';
     } catch (e) {
@@ -1034,15 +1060,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('log').innerHTML = '';
   });
 
-  // 自动启停检查：每 30 秒一次
   autoCheckInterval = setInterval(checkAutoStartStop, 30 * 1000);
   checkAutoStartStop();
 
-  // 实时价格：立即刷新一次，之后每 30 秒刷新
   updateLivePrices();
   priceRefreshInterval = setInterval(updateLivePrices, PRICE_REFRESH_INTERVAL);
 
-  // 勾选/取消勾选标的时立即刷新价格
   document.getElementById('symbols').addEventListener('change', updateLivePrices);
 
   log('面板就绪。自动启停已开启，默认美东 9:29 启动 / 16:02 停止。', 'info');
@@ -1051,7 +1074,7 @@ document.addEventListener('DOMContentLoaded', () => {
   log(`新闻源: APITube → Marketaux → Kiprio`, 'info');
   log(`多持仓模式：最多5只，单只≤10%，总≤75%`, 'info');
   log(`实时价格面板：每30秒刷新`, 'info');
-  log(`交易时段: 美东 9:30-16:00 | 高波动: 9:30-10:30, 15:00-16:00`, 'info');
+  log(`初始资金: $${INITIAL_CAPITAL.toLocaleString()}（用于计算总回报率）`, 'info');
 });
 </script>
 </body>
