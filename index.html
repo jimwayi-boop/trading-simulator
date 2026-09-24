@@ -34,6 +34,8 @@
   .badge-live { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb; }
   .badge-idle { background: #8b949e33; color: #8b949e; border: 1px solid #8b949e; }
   .badge-error { background: #f8514933; color: #f85149; border: 1px solid #f85149; }
+  .badge-bull { background: #3fb95033; color: #3fb950; border: 1px solid #3fb950; }
+  .badge-bear { background: #f8514933; color: #f85149; border: 1px solid #f85149; }
   .news-status { font-size: 11px; padding: 3px 5px; border-radius: 4px; margin-top: 5px; }
   .news-ok { background: #3fb95022; color: #3fb950; border: 1px solid #3fb95044; }
   .news-fallback { background: #d2992222; color: #d29922; border: 1px solid #d2992244; }
@@ -47,6 +49,11 @@
   .auto-row input { width: auto; }
   .auto-row label { margin: 0; font-size: 13px; color: #c9d1d9; }
   .auto-info { font-size: 11px; color: #8b949e; margin-top: 3px; }
+
+  .market-box { background: #0d1117; border-radius: 6px; padding: 7px 8px; margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+  .market-row { display: flex; justify-content: space-between; font-size: 11px; }
+  .market-label { color: #8b949e; }
+  .market-value { font-weight: 600; }
 
   .price-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-top: 6px; }
   .price-card { background: #0d1117; border: 1px solid #21262d; border-radius: 5px; padding: 6px 4px; text-align: center; }
@@ -104,27 +111,51 @@
     </div>
 
     <div class="row">
-      <div><label>止损 (%)</label><input type="number" id="stopLoss" value="1.5" step="0.1"></div>
       <div><label>部分止盈触发 (%)</label><input type="number" id="partialTPTrigger" value="1.5" step="0.1"></div>
       <div><label>跟踪止盈回撤 (%)</label><input type="number" id="trailingTPRetreat" value="0.8" step="0.1"></div>
+      <div><label>动量阈值 (%)</label><input type="number" id="momentumThreshold" value="0.35" step="0.05"></div>
     </div>
 
     <div class="row">
-      <div><label>动量阈值 (%)</label><input type="number" id="momentumThreshold" value="0.35" step="0.05"></div>
       <div><label>加仓触发 (%)</label><input type="number" id="addTrigger" value="1.5" step="0.5"></div>
       <div><label>加仓比例 (%)</label><input type="number" id="addSize" value="3" step="0.5"></div>
+      <div><label>ATR 阈值 (%)</label><input type="number" id="atrThreshold" value="1.5" step="0.1"></div>
     </div>
 
     <div class="row">
-      <div><label>ATR 阈值 (%)</label><input type="number" id="atrThreshold" value="1.5" step="0.1"></div>
       <div><label>单只上限 (%)</label><input type="number" id="maxExposure" value="10" step="1"></div>
       <div><label>总敞口上限 (%)</label><input type="number" id="maxTotalExposure" value="75" step="5"></div>
+      <div><label>最大持仓数</label><input type="number" id="maxPositions" value="5" step="1"></div>
     </div>
 
     <div class="row">
-      <div><label>最大持仓数</label><input type="number" id="maxPositions" value="5" step="1"></div>
       <div><label>时间止损 (分钟)</label><input type="number" id="timeStopMinutes" value="30" step="5"></div>
       <div><label>收盘强平 (美东分)</label><input type="number" id="forceCloseMinutes" value="955" step="5"></div>
+      <div><label>市场更新 (分钟)</label><input type="number" id="marketUpdateMin" value="30" step="5"></div>
+    </div>
+
+    <h3 style="margin-top:10px;">市场状态 (SPY)</h3>
+    <div class="market-box">
+      <div class="market-row">
+        <span class="market-label">状态</span>
+        <span class="market-value" id="marketStateText">未加载</span>
+      </div>
+      <div class="market-row">
+        <span class="market-label">SPY 当前价</span>
+        <span class="market-value" id="marketSpyPrice">—</span>
+      </div>
+      <div class="market-row">
+        <span class="market-label">SPY 20 日均线</span>
+        <span class="market-value" id="marketSpyMa20">—</span>
+      </div>
+      <div class="market-row">
+        <span class="market-label">当前止损范围</span>
+        <span class="market-value" id="marketStopRange">—</span>
+      </div>
+      <div class="market-row">
+        <span class="market-label">最后更新</span>
+        <span class="market-value" id="marketLastUpdate">—</span>
+      </div>
     </div>
 
     <div class="auto-row">
@@ -147,8 +178,8 @@
     <button class="btn-reset" id="btnReset">重置日志</button>
 
     <div class="hint">APITube → Marketaux → Kiprio 三层降级</div>
+    <div class="hint">止损：ATR × 乘数，牛市 1.5×[1.5%-3%]，熊市 1.0×[0.8%-1.5%]</div>
     <div class="hint">止盈：1.5% 卖50% + 剩余跟踪回撤0.8%</div>
-    <div class="hint">止损：成本 → 保本 → +0.5% → +1%+跟踪0.6%</div>
     <div class="hint">时间止损：仅浮亏时启用</div>
     <div class="hint">收盘强平：美东 15:55</div>
   </div>
@@ -214,16 +245,30 @@ const PRICE_REFRESH_INTERVAL = 30 * 1000;
 const PNL_REFRESH_INTERVAL = 5 * 60 * 1000;
 const INITIAL_CAPITAL = 100000;
 
-// 分级止损
+// ═══════════════════════════════════════════════
+// ATR 动态止损 + 市场过滤参数
+// ═══════════════════════════════════════════════
+// 牛市（SPY > 20MA）：宽止损，乘数大，范围 [1.5%, 3.0%]
+const BULL_ATR_MULTIPLIER = 1.5;
+const BULL_MIN_STOP = 1.5;
+const BULL_MAX_STOP = 3.0;
+
+// 熊市（SPY < 20MA）：紧止损，乘数小，范围 [0.8%, 1.5%]
+const BEAR_ATR_MULTIPLIER = 1.0;
+const BEAR_MIN_STOP = 0.8;
+const BEAR_MAX_STOP = 1.5;
+
+// SPY 20 日均线窗口
+const MA_WINDOW = 20;
+
+// 分级止损（相对加权平均成本的浮盈 %）
 const STAGE_BREAKEVEN_PCT = 0.3;
 const STAGE_LOCK_05_PCT = 0.8;
 const STAGE_LOCK_1_PCT = 1.5;
 const TRAILING_STOP_PCT = 0.006;
 
-// 时间止损最低浮盈阈值：仅当 pnl < 0 时才触发
+// 时间止损 / 新闻退出
 const TIME_STOP_MAX_PNL = 0;
-
-// 新闻情绪退出阈值：利润 < 1% 才触发
 const NEWS_EXIT_MAX_PNL = 1.0;
 
 // ═══════════════════════════════════════════════
@@ -248,13 +293,25 @@ let currentTradeDate = '';
 let lastCloseTime = {};
 let positionHighPrice = {};
 let positionEntryTime = {};
-let positionPartialTP = {};   // 是否已执行部分止盈
+let positionPartialTP = {};
+
+// 持仓时记录该股票入场时的 ATR% 和根据市场状态计算出的止损%
+let positionAtrPct = {};
+let positionStopLossPct = {};
 
 let autoStartedToday = false;
 let autoStoppedToday = false;
 
 let symbolRealizedPnl = {};
-let lastPnlCalcTime = 0;
+
+// 市场状态（SPY vs 20MA）
+let marketState = {
+  isBull: true,
+  spyPrice: null,
+  spyMa20: null,
+  lastUpdate: 0,
+  loaded: false
+};
 
 // ═══════════════════════════════════════════════
 // 工具函数
@@ -313,6 +370,8 @@ function cleanupPositionState(sym, closed) {
   delete positionHighPrice[sym + '_added'];
   delete positionEntryTime[sym];
   delete positionPartialTP[sym];
+  delete positionAtrPct[sym];
+  delete positionStopLossPct[sym];
   if (closed) {
     lastCloseTime[sym] = Date.now();
     dailyTradeCount[sym] = (dailyTradeCount[sym] || 0) + 1;
@@ -340,6 +399,109 @@ function updatePnlDisplay(account) {
 }
 
 // ═══════════════════════════════════════════════
+// 市场状态更新（SPY 20MA）
+// ═══════════════════════════════════════════════
+async function updateMarketState() {
+  try {
+    const url = `${WORKER_URL}/alpaca-data/v2/stocks/SPY/bars?timeframe=1Day&limit=40&feed=iex&sort=desc`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      log(`获取 SPY 数据失败: ${resp.status}`, 'warn');
+      return;
+    }
+    const data = await resp.json();
+    const bars = (data.bars || []).reverse();  // 从旧到新
+    if (bars.length < MA_WINDOW) {
+      log(`SPY 数据不足 ${MA_WINDOW} 根，无法计算均线`, 'warn');
+      return;
+    }
+
+    const recent20 = bars.slice(-MA_WINDOW);
+    const ma20 = recent20.reduce((s, b) => s + b.c, 0) / MA_WINDOW;
+    const currentPrice = bars[bars.length - 1].c;
+
+    const wasBull = marketState.isBull;
+    marketState = {
+      isBull: currentPrice > ma20,
+      spyPrice: currentPrice,
+      spyMa20: ma20,
+      lastUpdate: Date.now(),
+      loaded: true
+    };
+
+    updateMarketStateUI();
+
+    if (!marketState.loaded || wasBull !== marketState.isBull) {
+      log(`市场状态变化: SPY $${currentPrice.toFixed(2)} vs 20MA $${ma20.toFixed(2)} → ${marketState.isBull ? '🐂 牛市（宽止损）' : '🐻 熊市（紧止损）'}`, marketState.isBull ? 'buy' : 'sell');
+    } else {
+      log(`市场状态更新: ${marketState.isBull ? '🐂 牛市' : '🐻 熊市'} (SPY $${currentPrice.toFixed(2)})`, 'info');
+    }
+  } catch (e) {
+    console.error('市场状态更新失败:', e);
+  }
+}
+
+function updateMarketStateUI() {
+  const stateEl = document.getElementById('marketStateText');
+  const priceEl = document.getElementById('marketSpyPrice');
+  const maEl = document.getElementById('marketSpyMa20');
+  const rangeEl = document.getElementById('marketStopRange');
+  const updateEl = document.getElementById('marketLastUpdate');
+
+  if (!marketState.loaded) {
+    stateEl.textContent = '未加载';
+    stateEl.className = 'market-value';
+    return;
+  }
+
+  stateEl.textContent = marketState.isBull ? '🐂 牛市' : '🐻 熊市';
+  stateEl.className = 'market-value ' + (marketState.isBull ? 'profit' : 'loss');
+  priceEl.textContent = '$' + marketState.spyPrice.toFixed(2);
+  maEl.textContent = '$' + marketState.spyMa20.toFixed(2);
+
+  if (marketState.isBull) {
+    rangeEl.textContent = `${BULL_MIN_STOP}% ~ ${BULL_MAX_STOP}% (乘数 ${BULL_ATR_MULTIPLIER}×)`;
+  } else {
+    rangeEl.textContent = `${BEAR_MIN_STOP}% ~ ${BEAR_MAX_STOP}% (乘数 ${BEAR_ATR_MULTIPLIER}×)`;
+  }
+
+  const timeStr = new Date(marketState.lastUpdate).toLocaleTimeString('zh-CN', { hour12: false, timeZone: 'America/New_York' });
+  updateEl.textContent = timeStr;
+}
+
+// ═══════════════════════════════════════════════
+// ATR 动态止损计算
+// ═══════════════════════════════════════════════
+function calculateDynamicStopLoss(atrPct) {
+  if (!marketState.loaded) {
+    // 市场状态未加载时，用保守值
+    return 1.5;
+  }
+  const multiplier = marketState.isBull ? BULL_ATR_MULTIPLIER : BEAR_ATR_MULTIPLIER;
+  const minStop = marketState.isBull ? BULL_MIN_STOP : BEAR_MIN_STOP;
+  const maxStop = marketState.isBull ? BULL_MAX_STOP : BEAR_MAX_STOP;
+  const raw = atrPct * multiplier;
+  return Math.max(minStop, Math.min(maxStop, raw));
+}
+
+// ═══════════════════════════════════════════════
+// 分级止损（用动态 stopLossPct）
+// ═══════════════════════════════════════════════
+function getEffectiveStopPrice(entryPrice, currentPrice, highPrice, stopLossPct, pnlPct) {
+  if (pnlPct < STAGE_BREAKEVEN_PCT) {
+    return { price: entryPrice * (1 - stopLossPct / 100), stage: `成本止损(${stopLossPct.toFixed(2)}%)` };
+  } else if (pnlPct < STAGE_LOCK_05_PCT) {
+    return { price: entryPrice, stage: '保本' };
+  } else if (pnlPct < STAGE_LOCK_1_PCT) {
+    return { price: entryPrice * 1.005, stage: '锁定+0.5%' };
+  } else {
+    const lock = entryPrice * 1.01;
+    const trail = highPrice * (1 - TRAILING_STOP_PCT);
+    return { price: Math.max(lock, trail), stage: '锁定+1%+跟踪' };
+  }
+}
+
+// ═══════════════════════════════════════════════
 // 月度/年度已实现盈亏
 // ═══════════════════════════════════════════════
 async function calculateSymbolRealizedPnl() {
@@ -350,10 +512,7 @@ async function calculateSymbolRealizedPnl() {
 
     const url = `${WORKER_URL}/alpaca-trade/v2/account/activities?activity_type=FILL&after=${yearStart}&direction=asc&page_size=500`;
     const resp = await fetch(url);
-    if (!resp.ok) {
-      console.warn('获取成交记录失败:', resp.status);
-      return;
-    }
+    if (!resp.ok) return;
     const activities = await resp.json();
     if (!Array.isArray(activities)) return;
 
@@ -389,27 +548,9 @@ async function calculateSymbolRealizedPnl() {
         year: state[sym].yearRealized
       };
     });
-    lastPnlCalcTime = Date.now();
-    log(`月度/年度已实现盈亏已更新 (${Object.keys(state).length} 只标的)`, 'info');
+    log(`月度/年度已实现盈亏已更新`, 'info');
   } catch (e) {
     console.error('计算月度/年度盈亏失败:', e);
-  }
-}
-
-// ═══════════════════════════════════════════════
-// 分级止损
-// ═══════════════════════════════════════════════
-function getEffectiveStopPrice(entryPrice, currentPrice, highPrice, stopLossPct, pnlPct) {
-  if (pnlPct < STAGE_BREAKEVEN_PCT) {
-    return { price: entryPrice * (1 - stopLossPct / 100), stage: '成本止损' };
-  } else if (pnlPct < STAGE_LOCK_05_PCT) {
-    return { price: entryPrice, stage: '保本' };
-  } else if (pnlPct < STAGE_LOCK_1_PCT) {
-    return { price: entryPrice * 1.005, stage: '锁定+0.5%' };
-  } else {
-    const lock = entryPrice * 1.01;
-    const trail = highPrice * (1 - TRAILING_STOP_PCT);
-    return { price: Math.max(lock, trail), stage: '锁定+1%+跟踪' };
   }
 }
 
@@ -798,10 +939,15 @@ async function runOneCycle() {
       log(`新交易日 ${today}，重置交易计数`, 'info');
     }
 
+    // 市场状态更新
+    const marketUpdateInterval = parseInt(document.getElementById('marketUpdateMin').value) * 60 * 1000;
+    if ((Date.now() - marketState.lastUpdate) >= marketUpdateInterval) {
+      updateMarketState();
+    }
+
     const symbols = getSelectedSymbols();
     const timeframe = parseInt(document.getElementById('timeframe').value);
     const baseSizePct = parseFloat(document.getElementById('baseSize').value);
-    const stopLossPct = parseFloat(document.getElementById('stopLoss').value);
     const partialTPTriggerPct = parseFloat(document.getElementById('partialTPTrigger').value);
     const trailingTPRetreatPct = parseFloat(document.getElementById('trailingTPRetreat').value);
     const momentumThresholdPct = parseFloat(document.getElementById('momentumThreshold').value);
@@ -819,7 +965,7 @@ async function runOneCycle() {
       updateNewsCacheAsync(symbols);
     }
 
-    log(`── 检查周期 (${symbols.length}只) ──`, 'info');
+    log(`── 检查周期 (${symbols.length}只) [${marketState.isBull ? '牛' : '熊'}] ──`, 'info');
 
     let account;
     try {
@@ -881,15 +1027,25 @@ async function runOneCycle() {
       const marketValue = qty * currentPrice;
       const pnlPct = ((currentPrice - entryPrice) / entryPrice) * 100;
 
-      log(`持仓 ${sym}: ${qty.toFixed(4)}股 | 均价$${entryPrice.toFixed(2)} → $${currentPrice.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)${positionPartialTP[sym] ? ' [已部分止盈]' : ''}`, 'info');
-
       if (!positionEntryTime[sym]) positionEntryTime[sym] = Date.now();
       if (!positionHighPrice[sym] || currentPrice > positionHighPrice[sym]) {
         positionHighPrice[sym] = currentPrice;
       }
       const highPrice = positionHighPrice[sym];
 
-      // ═══════════ 部分止盈触发 ═══════════
+      // 计算该持仓的动态止损%
+      // 若入场时未记录（例如重启后），用当前 ATR 近似
+      let atrPct = positionAtrPct[sym];
+      if (atrPct === undefined || atrPct === null) {
+        // 重新估计：用最近 K 线计算 ATR%
+        atrPct = 1.5;  // 保守默认
+      }
+      const dynamicStopLossPct = calculateDynamicStopLoss(atrPct);
+      positionStopLossPct[sym] = dynamicStopLossPct;
+
+      log(`持仓 ${sym}: ${qty.toFixed(4)}股 | 均价$${entryPrice.toFixed(2)} → $${currentPrice.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%) | 动态止损 ${dynamicStopLossPct.toFixed(2)}%${positionPartialTP[sym] ? ' [已部分止盈]' : ''}`, 'info');
+
+      // 部分止盈
       if (!positionPartialTP[sym] && pnlPct >= partialTPTriggerPct) {
         const halfQty = qty / 2;
         log(`${sym} 部分止盈触发 (+${pnlPct.toFixed(2)}%) → 卖出 50% (${halfQty.toFixed(4)}股)，剩余切换到跟踪止盈`, 'buy');
@@ -897,18 +1053,16 @@ async function runOneCycle() {
           const order = await submitOrder(sym, halfQty.toFixed(4), 'sell', 'market', 'day');
           log(`${sym} 部分止盈成交 | ${order.status}`, 'buy');
           positionPartialTP[sym] = true;
-          // 高点不变，继续跟踪
         } catch (e) {
           log(`${sym} 部分止盈失败: ${e.message}`, 'sell');
         }
-        // 不 continue，让剩余仓位继续在本轮进行止损/跟踪检查
       }
 
-      // ═══════════ 跟踪止盈（部分止盈后的剩余仓位） ═══════════
+      // 跟踪止盈（部分止盈后）
       if (positionPartialTP[sym]) {
         const trailPrice = highPrice * (1 - trailingTPRetreatPct / 100);
         if (currentPrice <= trailPrice) {
-          log(`${sym} 跟踪止盈触发 现价$${currentPrice.toFixed(2)} ≤ 跟踪线$${trailPrice.toFixed(2)}（高点$${highPrice.toFixed(2)} 回撤${trailingTPRetreatPct}%）`, 'buy');
+          log(`${sym} 跟踪止盈触发 现价$${currentPrice.toFixed(2)} ≤ 跟踪线$${trailPrice.toFixed(2)}`, 'buy');
           try {
             await closePosition(sym);
             cleanupPositionState(sym, true);
@@ -918,9 +1072,9 @@ async function runOneCycle() {
         }
       }
 
-      // ═══════════ 分级止损（未部分止盈时） ═══════════
+      // 分级止损（未部分止盈时，用动态 stopLossPct）
       if (!positionPartialTP[sym]) {
-        const stopInfo = getEffectiveStopPrice(entryPrice, currentPrice, highPrice, stopLossPct, pnlPct);
+        const stopInfo = getEffectiveStopPrice(entryPrice, currentPrice, highPrice, dynamicStopLossPct, pnlPct);
         const effectiveStop = stopInfo.price;
         const effectiveStopPct = ((effectiveStop - entryPrice) / entryPrice) * 100;
 
@@ -935,7 +1089,7 @@ async function runOneCycle() {
         }
       }
 
-      // ═══════════ 时间止损（仅浮亏时启用） ═══════════
+      // 时间止损（仅浮亏）
       const holdMin = (Date.now() - positionEntryTime[sym]) / 60000;
       if (holdMin >= timeStopMinutes && pnlPct < TIME_STOP_MAX_PNL) {
         log(`${sym} 时间止损（持仓 ${holdMin.toFixed(0)} 分钟，浮盈 ${pnlPct.toFixed(2)}% < 0%）`, 'sell');
@@ -947,7 +1101,7 @@ async function runOneCycle() {
         continue;
       }
 
-      // ═══════════ 新闻情绪退出（放宽到利润 < 1%） ═══════════
+      // 新闻退出
       const cachedNews = newsCache[sym] || { bullish: false, score: 0, source: 'none' };
       if (!cachedNews.bullish && cachedNews.score < 0.15 && pnlPct < NEWS_EXIT_MAX_PNL) {
         log(`${sym} 反向信号平仓 (新闻来源: ${cachedNews.source}, 浮盈 ${pnlPct.toFixed(2)}%)`, 'sell');
@@ -959,7 +1113,7 @@ async function runOneCycle() {
         continue;
       }
 
-      // ═══════════ 加仓 ═══════════
+      // 加仓
       const posAdded = positionHighPrice[sym + '_added'];
       if (!posAdded && pnlPct >= addTriggerPct && dailyTradeCount[sym] < MAX_DAILY_TRADES_PER_SYMBOL) {
         const currentExposurePct = (marketValue / totalEquity) * 100;
@@ -1036,13 +1190,14 @@ async function runOneCycle() {
       const barRange = ((latest.high - latest.low) / latest.close) * 100;
       if (barRange > 1.0) { log(`${sym} K线振幅${barRange.toFixed(2)}% > 1%`, 'info'); continue; }
 
+      let atrPct = null;
       if (bars.length >= 20) {
         let atrSum = 0;
         for (let j = bars.length - 20; j < bars.length; j++) {
           atrSum += ((bars[j].high - bars[j].low) / bars[j].close) * 100;
         }
-        const atr = atrSum / 20;
-        if (atr > atrThresholdPct) { log(`${sym} ATR ${atr.toFixed(2)}% > ${atrThresholdPct}%`, 'info'); continue; }
+        atrPct = atrSum / 20;
+        if (atrPct > atrThresholdPct) { log(`${sym} ATR ${atrPct.toFixed(2)}% > ${atrThresholdPct}%`, 'info'); continue; }
       }
 
       const pastPrice = bars[bars.length - 4].close;
@@ -1055,8 +1210,8 @@ async function runOneCycle() {
       const momentumScore = Math.min(momentumPct / 5, 1);
       const composite = cachedNews.score * 0.6 + momentumScore * 0.4;
 
-      candidates.push({ sym, price, composite, momentumPct, newsScore: cachedNews.score, newsSource: cachedNews.source, bars });
-      log(`${sym} 候选: 综合分${composite.toFixed(3)} (情绪${cachedNews.score.toFixed(2)}, 动量${momentumPct.toFixed(2)}%) [${cachedNews.source}]`, 'info');
+      candidates.push({ sym, price, composite, momentumPct, newsScore: cachedNews.score, newsSource: cachedNews.source, bars, atrPct: atrPct || 1.5 });
+      log(`${sym} 候选: 综合分${composite.toFixed(3)} (情绪${cachedNews.score.toFixed(2)}, 动量${momentumPct.toFixed(2)}%, ATR${(atrPct || 1.5).toFixed(2)}%) [${cachedNews.source}]`, 'info');
     }
 
     if (candidates.length === 0) {
@@ -1088,12 +1243,16 @@ async function runOneCycle() {
       const effectivePrice = c.price * (1 + slippage);
       const qty = positionValue / effectivePrice;
 
-      log(`>>> 买入 ${c.sym}: ${qty.toFixed(4)}股 @ ~$${effectivePrice.toFixed(2)} (综合分${c.composite.toFixed(3)})`, 'buy');
+      const dynStop = calculateDynamicStopLoss(c.atrPct);
+      log(`>>> 买入 ${c.sym}: ${qty.toFixed(4)}股 @ ~$${effectivePrice.toFixed(2)} (综合分${c.composite.toFixed(3)}, ATR${c.atrPct.toFixed(2)}%, 动态止损${dynStop.toFixed(2)}%)`, 'buy');
+
       const result = await submitSplitOrder(c.sym, qty, 'buy');
       if (result.success) {
         positionHighPrice[c.sym] = c.price;
         positionEntryTime[c.sym] = Date.now();
         positionPartialTP[c.sym] = false;
+        positionAtrPct[c.sym] = c.atrPct;
+        positionStopLossPct[c.sym] = dynStop;
         runningExposure += positionValue;
         opened++;
         log(`买入 ${c.sym} 完成 | 仓位 $${positionValue.toFixed(2)}（${baseSizePct}%）`, 'buy');
@@ -1125,10 +1284,12 @@ function updatePositionDisplay(positions) {
     const pnlPct = ((current - entry) / entry) * 100;
     const color = pnlPct >= 0 ? '#3fb950' : '#f85149';
     const partial = positionPartialTP[p.symbol] ? ' <span style="color:#d29922;">[已部分止盈]</span>' : '';
+    const dynStop = positionStopLossPct[p.symbol];
+    const stopInfo = dynStop ? ` <span style="color:#58a6ff;">[止损${dynStop.toFixed(2)}%]</span>` : '';
     return `<div style="margin-bottom:5px;">
       <strong>${p.symbol}</strong>: ${parseFloat(p.qty).toFixed(4)}股 |
       均价$${entry.toFixed(2)} → $${current.toFixed(2)} |
-      <span style="color:${color};">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</span>${partial}
+      <span style="color:${color};">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</span>${partial}${stopInfo}
     </div>`;
   }).join('');
 }
@@ -1161,10 +1322,10 @@ function startLoop() {
   document.getElementById('btnStop').style.display = 'block';
 
   log(`实时交易已启动 | 检查${intervalMin}分钟 | 新闻10/12分钟`, 'buy');
+  log(`止损: ATR × 乘数 (牛市 ${BULL_ATR_MULTIPLIER}×, 熊市 ${BEAR_ATR_MULTIPLIER}×)`, 'info');
+  log(`范围: 牛市 [${BULL_MIN_STOP}%, ${BULL_MAX_STOP}%], 熊市 [${BEAR_MIN_STOP}%, ${BEAR_MAX_STOP}%]`, 'info');
   log(`止盈: ${document.getElementById('partialTPTrigger').value}% 卖50% → 剩余跟踪回撤${document.getElementById('trailingTPRetreat').value}%`, 'info');
-  log(`止损: 成本 → 保本(0.3%) → +0.5%(0.8%) → +1%+跟踪0.6%(1.5%)`, 'info');
   log(`时间止损: ${document.getElementById('timeStopMinutes').value}分钟仅浮亏时启用`, 'info');
-  log(`新闻退出: 浮盈<${NEWS_EXIT_MAX_PNL}% 且情绪转弱`, 'info');
   log(`收盘强平: 美东 15:55`, 'info');
 
   runOneCycle().catch(e => { console.error(e); log(`循环错误: ${e.message}`, 'sell'); });
@@ -1211,6 +1372,9 @@ document.addEventListener('DOMContentLoaded', () => {
   autoCheckInterval = setInterval(checkAutoStartStop, 30 * 1000);
   checkAutoStartStop();
 
+  // 启动时先加载市场状态
+  updateMarketState();
+
   calculateSymbolRealizedPnl();
   pnlRefreshInterval = setInterval(calculateSymbolRealizedPnl, PNL_REFRESH_INTERVAL);
 
@@ -1223,9 +1387,9 @@ document.addEventListener('DOMContentLoaded', () => {
   log('注意：请确保 Alpaca 账户是 Paper Trading 模式。', 'warn');
   log(`新闻源: APITube → Marketaux → Kiprio`, 'info');
   log(`多持仓模式：最多5只，单只≤10%，总≤75%`, 'info');
-  log(`实时价格 + 当日/当月/当年盈亏：每30秒刷新`, 'info');
-  log(`止盈: 1.5% 卖50% + 剩余跟踪回撤0.8%`, 'info');
-  log(`时间止损: 仅浮亏时启用 | 收盘强平: 15:55`, 'info');
+  log(`动态止损: ATR × 乘数 × 市场状态`, 'info');
+  log(`牛市(SPY>20MA): ${BULL_ATR_MULTIPLIER}× ATR，范围[${BULL_MIN_STOP}%, ${BULL_MAX_STOP}%]`, 'info');
+  log(`熊市(SPY<20MA): ${BEAR_ATR_MULTIPLIER}× ATR，范围[${BEAR_MIN_STOP}%, ${BEAR_MAX_STOP}%]`, 'info');
 });
 </script>
 </body>
