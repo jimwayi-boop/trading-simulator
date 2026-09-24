@@ -47,18 +47,22 @@
   .auto-row input { width: auto; }
   .auto-row label { margin: 0; font-size: 13px; color: #c9d1d9; }
   .auto-info { font-size: 11px; color: #8b949e; margin-top: 3px; }
+
   .price-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-top: 6px; }
   .price-card { background: #0d1117; border: 1px solid #21262d; border-radius: 5px; padding: 6px 4px; text-align: center; }
   .price-symbol { font-size: 12px; font-weight: 700; color: #58a6ff; }
   .price-value { font-size: 14px; font-weight: 600; margin-top: 2px; }
   .price-change { font-size: 11px; margin-top: 1px; white-space: nowrap; }
-  .price-pnl { font-size: 11px; margin-top: 3px; padding-top: 3px; border-top: 1px solid #21262d; white-space: nowrap; }
+  .price-pnl-block { margin-top: 3px; padding-top: 3px; border-top: 1px solid #21262d; display: flex; flex-direction: column; gap: 1px; }
+  .price-pnl-line { font-size: 10px; white-space: nowrap; display: flex; justify-content: space-between; padding: 0 1px; }
+  .price-pnl-label { color: #8b949e; }
+  .price-pnl-value { font-weight: 600; }
   .price-up { color: #3fb950; }
   .price-down { color: #f85149; }
   .price-flat { color: #8b949e; }
-  .pnl-up { color: #3fb950; font-weight: 600; }
-  .pnl-down { color: #f85149; font-weight: 600; }
-  .pnl-none { color: #8b949e; font-size: 10px; }
+  .pnl-up { color: #3fb950; }
+  .pnl-down { color: #f85149; }
+  .pnl-none { color: #8b949e; }
   .price-updated { font-size: 10px; color: #8b949e; margin-top: 4px; text-align: right; }
 </style>
 </head>
@@ -101,20 +105,26 @@
 
     <div class="row">
       <div><label>止损 (%)</label><input type="number" id="stopLoss" value="1.5" step="0.1"></div>
-      <div><label>止盈 (%)</label><input type="number" id="takeProfit" value="2.5" step="0.1"></div>
-      <div><label>动量阈值 (%)</label><input type="number" id="momentumThreshold" value="0.35" step="0.05"></div>
+      <div><label>部分止盈触发 (%)</label><input type="number" id="partialTPTrigger" value="1.5" step="0.1"></div>
+      <div><label>跟踪止盈回撤 (%)</label><input type="number" id="trailingTPRetreat" value="0.8" step="0.1"></div>
     </div>
 
     <div class="row">
+      <div><label>动量阈值 (%)</label><input type="number" id="momentumThreshold" value="0.35" step="0.05"></div>
       <div><label>加仓触发 (%)</label><input type="number" id="addTrigger" value="1.5" step="0.5"></div>
       <div><label>加仓比例 (%)</label><input type="number" id="addSize" value="3" step="0.5"></div>
-      <div><label>ATR 阈值 (%)</label><input type="number" id="atrThreshold" value="1.5" step="0.1"></div>
     </div>
 
     <div class="row">
+      <div><label>ATR 阈值 (%)</label><input type="number" id="atrThreshold" value="1.5" step="0.1"></div>
       <div><label>单只上限 (%)</label><input type="number" id="maxExposure" value="10" step="1"></div>
       <div><label>总敞口上限 (%)</label><input type="number" id="maxTotalExposure" value="75" step="5"></div>
+    </div>
+
+    <div class="row">
       <div><label>最大持仓数</label><input type="number" id="maxPositions" value="5" step="1"></div>
+      <div><label>时间止损 (分钟)</label><input type="number" id="timeStopMinutes" value="30" step="5"></div>
+      <div><label>收盘强平 (美东分)</label><input type="number" id="forceCloseMinutes" value="955" step="5"></div>
     </div>
 
     <div class="auto-row">
@@ -137,10 +147,9 @@
     <button class="btn-reset" id="btnReset">重置日志</button>
 
     <div class="hint">APITube → Marketaux → Kiprio 三层降级</div>
-    <div class="hint">新闻：高波动10分钟 / 其他12分钟</div>
-    <div class="hint">滑点：NVDA/META 0.05%，其他 0.1%</div>
-    <div class="hint">分级止损：成本 → 保本 → +0.5% → +1%+跟踪0.6%</div>
-    <div class="hint">时间止损：30分钟无进展平仓</div>
+    <div class="hint">止盈：1.5% 卖50% + 剩余跟踪回撤0.8%</div>
+    <div class="hint">止损：成本 → 保本 → +0.5% → +1%+跟踪0.6%</div>
+    <div class="hint">时间止损：仅浮亏时启用</div>
     <div class="hint">收盘强平：美东 15:55</div>
   </div>
 
@@ -157,7 +166,7 @@
       <div class="stat"><div class="stat-label">总敞口 (%)</div><div class="stat-value" id="statExposure">—</div></div>
     </div>
 
-    <h3 style="margin-top:10px;">实时价格 + 当日盈亏</h3>
+    <h3 style="margin-top:10px;">实时价格 + 盈亏（当日 / 当月 / 当年）</h3>
     <div class="price-grid" id="livePrices">
       <div class="price-card"><div class="price-symbol">加载中...</div></div>
     </div>
@@ -202,18 +211,20 @@ const NEWS_STALE_LIMIT = 30 * 60 * 1000;
 const MAX_DAILY_TRADES_PER_SYMBOL = 3;
 const COMPOSITE_HIGH_THRESHOLD = 0.8;
 const PRICE_REFRESH_INTERVAL = 30 * 1000;
+const PNL_REFRESH_INTERVAL = 5 * 60 * 1000;
 const INITIAL_CAPITAL = 100000;
 
-// 分级止损阶段（浮盈 %）
-const STAGE_BREAKEVEN_PCT = 0.3;    // 盈利 ≥ 0.3% → 保本
-const STAGE_LOCK_05_PCT = 0.8;      // 盈利 ≥ 0.8% → 锁定 +0.5%
-const STAGE_LOCK_1_PCT = 1.5;       // 盈利 ≥ 1.5% → 锁定 +1% + 跟踪
-const TRAILING_STOP_PCT = 0.006;    // 从高点回撤 0.6% 触发跟踪止损
+// 分级止损
+const STAGE_BREAKEVEN_PCT = 0.3;
+const STAGE_LOCK_05_PCT = 0.8;
+const STAGE_LOCK_1_PCT = 1.5;
+const TRAILING_STOP_PCT = 0.006;
 
-// 方案 A 额外保护
-const TIME_STOP_MINUTES = 30;        // 持仓超过 30 分钟
-const TIME_STOP_MIN_PNL = 0.3;       // 且浮盈 < 0.3% → 平仓
-const FORCE_CLOSE_MINUTES = 955;     // 美东 15:55 收盘强平
+// 时间止损最低浮盈阈值：仅当 pnl < 0 时才触发
+const TIME_STOP_MAX_PNL = 0;
+
+// 新闻情绪退出阈值：利润 < 1% 才触发
+const NEWS_EXIT_MAX_PNL = 1.0;
 
 // ═══════════════════════════════════════════════
 // 全局状态
@@ -225,6 +236,7 @@ let timerInterval = null;
 let countdownInterval = null;
 let autoCheckInterval = null;
 let priceRefreshInterval = null;
+let pnlRefreshInterval = null;
 let secondsUntilNext = 0;
 
 let newsCache = {};
@@ -235,10 +247,14 @@ let dailyTradeCount = {};
 let currentTradeDate = '';
 let lastCloseTime = {};
 let positionHighPrice = {};
-let positionEntryTime = {};    // 记录每只股票入场时间（毫秒）
+let positionEntryTime = {};
+let positionPartialTP = {};   // 是否已执行部分止盈
 
 let autoStartedToday = false;
 let autoStoppedToday = false;
+
+let symbolRealizedPnl = {};
+let lastPnlCalcTime = 0;
 
 // ═══════════════════════════════════════════════
 // 工具函数
@@ -296,6 +312,7 @@ function cleanupPositionState(sym, closed) {
   delete positionHighPrice[sym];
   delete positionHighPrice[sym + '_added'];
   delete positionEntryTime[sym];
+  delete positionPartialTP[sym];
   if (closed) {
     lastCloseTime[sym] = Date.now();
     dailyTradeCount[sym] = (dailyTradeCount[sym] || 0) + 1;
@@ -323,15 +340,65 @@ function updatePnlDisplay(account) {
 }
 
 // ═══════════════════════════════════════════════
-// 分级止损（方案 A + 方案 C 组合）
+// 月度/年度已实现盈亏
 // ═══════════════════════════════════════════════
-/**
- * 根据当前浮盈返回有效止损价
- * pnl < 0.3%          → 成本止损 = 成本 × (1 - stopLoss%)
- * 0.3% ≤ pnl < 0.8%   → 保本 = 成本价
- * 0.8% ≤ pnl < 1.5%   → 锁定 +0.5% = 成本 × 1.005
- * pnl ≥ 1.5%          → max(成本 × 1.01, 高点 × (1 - 0.006))
- */
+async function calculateSymbolRealizedPnl() {
+  try {
+    const now = new Date();
+    const yearStart = new Date(now.getFullYear(), 0, 1).toISOString();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+    const url = `${WORKER_URL}/alpaca-trade/v2/account/activities?activity_type=FILL&after=${yearStart}&direction=asc&page_size=500`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      console.warn('获取成交记录失败:', resp.status);
+      return;
+    }
+    const activities = await resp.json();
+    if (!Array.isArray(activities)) return;
+
+    const state = {};
+    activities.forEach(a => {
+      const sym = a.symbol;
+      if (!sym) return;
+      if (!state[sym]) state[sym] = { shares: 0, cost: 0, monthRealized: 0, yearRealized: 0 };
+
+      const s = state[sym];
+      const qty = parseFloat(a.qty);
+      const price = parseFloat(a.price);
+      const txTime = new Date(a.transaction_time);
+      const isMonth = txTime >= new Date(monthStart);
+
+      if (a.side === 'buy') {
+        s.cost += qty * price;
+        s.shares += qty;
+      } else {
+        const avgCost = s.shares > 0 ? s.cost / s.shares : 0;
+        const realized = qty * (price - avgCost);
+        s.yearRealized += realized;
+        if (isMonth) s.monthRealized += realized;
+        s.cost -= qty * avgCost;
+        s.shares -= qty;
+      }
+    });
+
+    symbolRealizedPnl = {};
+    Object.keys(state).forEach(sym => {
+      symbolRealizedPnl[sym] = {
+        month: state[sym].monthRealized,
+        year: state[sym].yearRealized
+      };
+    });
+    lastPnlCalcTime = Date.now();
+    log(`月度/年度已实现盈亏已更新 (${Object.keys(state).length} 只标的)`, 'info');
+  } catch (e) {
+    console.error('计算月度/年度盈亏失败:', e);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// 分级止损
+// ═══════════════════════════════════════════════
 function getEffectiveStopPrice(entryPrice, currentPrice, highPrice, stopLossPct, pnlPct) {
   if (pnlPct < STAGE_BREAKEVEN_PCT) {
     return { price: entryPrice * (1 - stopLossPct / 100), stage: '成本止损' };
@@ -347,7 +414,7 @@ function getEffectiveStopPrice(entryPrice, currentPrice, highPrice, stopLossPct,
 }
 
 // ═══════════════════════════════════════════════
-// 实时价格 + 当日盈亏
+// 实时价格 + 三层盈亏
 // ═══════════════════════════════════════════════
 async function updateLivePrices() {
   const symbols = getSelectedSymbols();
@@ -355,7 +422,6 @@ async function updateLivePrices() {
 
   try {
     const symbolsParam = symbols.join(',');
-    // 并行获取行情快照和持仓信息
     const [snapResp, posResp] = await Promise.all([
       fetch(`${WORKER_URL}/alpaca-data/v2/stocks/snapshots?symbols=${symbolsParam}&feed=iex`),
       fetch(`${WORKER_URL}/alpaca-trade/v2/positions`)
@@ -364,13 +430,11 @@ async function updateLivePrices() {
     const snapshots = snapResp.ok ? await snapResp.json() : {};
     const positions = posResp.ok ? await posResp.json() : [];
 
-    // 建立 symbol -> 持仓盈亏 映射
-    const pnlMap = {};
+    const posMap = {};
     (positions || []).forEach(p => {
-      pnlMap[p.symbol] = {
-        pl: parseFloat(p.unrealized_pl || 0),
-        plpc: parseFloat(p.unrealized_plpc || 0) * 100,
-        intradayPl: parseFloat(p.unrealized_intraday_pl || 0)
+      posMap[p.symbol] = {
+        intradayPl: parseFloat(p.unrealized_intraday_pl || 0),
+        unrealizedPl: parseFloat(p.unrealized_pl || 0)
       };
     });
 
@@ -380,7 +444,8 @@ async function updateLivePrices() {
 
     for (const sym of symbols) {
       const snap = snapshots[sym];
-      const pos = pnlMap[sym];
+      const pos = posMap[sym];
+      const realized = symbolRealizedPnl[sym] || { month: 0, year: 0 };
 
       let priceStr = '—';
       let changeStr = '';
@@ -400,20 +465,39 @@ async function updateLivePrices() {
         changeStr = prevClose ? `${arrow} ${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)` : '';
       }
 
-      // 当日盈亏显示
-      let pnlHtml = '<div class="price-pnl pnl-none">未持有</div>';
+      let dayPl = 0, monthPl = 0, yearPl = 0;
+      let hasPosition = false;
       if (pos) {
-        const v = pos.intradayPl;
-        const cls = v > 0 ? 'pnl-up' : v < 0 ? 'pnl-down' : 'pnl-none';
-        const sign = v >= 0 ? '+' : '';
-        pnlHtml = `<div class="price-pnl ${cls}">当日 ${sign}$${v.toFixed(2)}</div>`;
+        hasPosition = true;
+        dayPl = pos.intradayPl;
+        monthPl = realized.month + pos.unrealizedPl;
+        yearPl = realized.year + pos.unrealizedPl;
+      } else {
+        monthPl = realized.month;
+        yearPl = realized.year;
       }
+
+      const showPnl = hasPosition || Math.abs(realized.month) > 0.01 || Math.abs(realized.year) > 0.01;
+
+      const fmt = (v) => {
+        const cls = v > 0.005 ? 'pnl-up' : v < -0.005 ? 'pnl-down' : 'pnl-none';
+        const sign = v >= 0 ? '+' : '';
+        return `<span class="price-pnl-value ${cls}">${sign}$${v.toFixed(2)}</span>`;
+      };
+
+      const pnlBlock = showPnl
+        ? `<div class="price-pnl-block">
+            <div class="price-pnl-line"><span class="price-pnl-label">当日</span>${fmt(dayPl)}</div>
+            <div class="price-pnl-line"><span class="price-pnl-label">当月</span>${fmt(monthPl)}</div>
+            <div class="price-pnl-line"><span class="price-pnl-label">当年</span>${fmt(yearPl)}</div>
+          </div>`
+        : `<div class="price-pnl-block"><div class="price-pnl-line"><span class="price-pnl-label">未持有</span></div></div>`;
 
       cards.push(`<div class="price-card">
         <div class="price-symbol">${sym}</div>
         <div class="price-value">${priceStr}</div>
         <div class="price-change ${colorClass}">${changeStr}</div>
-        ${pnlHtml}
+        ${pnlBlock}
       </div>`);
     }
 
@@ -718,7 +802,8 @@ async function runOneCycle() {
     const timeframe = parseInt(document.getElementById('timeframe').value);
     const baseSizePct = parseFloat(document.getElementById('baseSize').value);
     const stopLossPct = parseFloat(document.getElementById('stopLoss').value);
-    const takeProfitPct = parseFloat(document.getElementById('takeProfit').value);
+    const partialTPTriggerPct = parseFloat(document.getElementById('partialTPTrigger').value);
+    const trailingTPRetreatPct = parseFloat(document.getElementById('trailingTPRetreat').value);
     const momentumThresholdPct = parseFloat(document.getElementById('momentumThreshold').value);
     const addTriggerPct = parseFloat(document.getElementById('addTrigger').value);
     const addSizePct = parseFloat(document.getElementById('addSize').value);
@@ -726,6 +811,8 @@ async function runOneCycle() {
     const maxTotalExposurePct = parseFloat(document.getElementById('maxTotalExposure').value);
     const maxPositions = parseInt(document.getElementById('maxPositions').value);
     const atrThresholdPct = parseFloat(document.getElementById('atrThreshold').value);
+    const timeStopMinutes = parseInt(document.getElementById('timeStopMinutes').value);
+    const forceCloseMinutes = parseInt(document.getElementById('forceCloseMinutes').value);
 
     const newsInterval = getNewsInterval();
     if ((Date.now() - lastNewsFetchTime) >= newsInterval) {
@@ -767,8 +854,8 @@ async function runOneCycle() {
     const totalEquity = parseFloat(account.equity);
     const currentMin = getEasternMinutes();
 
-    // ═══════════ 收盘强平 ═══════════
-    if (currentMin >= FORCE_CLOSE_MINUTES && positions.length > 0) {
+    // 收盘强平
+    if (currentMin >= forceCloseMinutes && positions.length > 0) {
       log(`⏰ 收盘强平（美东 15:55+），平掉所有持仓`, 'warn');
       for (const pos of positions) {
         try {
@@ -786,7 +873,6 @@ async function runOneCycle() {
 
     const activePositions = [];
 
-    // ═══════════ 持仓检查 ═══════════
     for (const pos of positions) {
       const sym = pos.symbol;
       const entryPrice = parseFloat(pos.avg_entry_price);
@@ -795,50 +881,64 @@ async function runOneCycle() {
       const marketValue = qty * currentPrice;
       const pnlPct = ((currentPrice - entryPrice) / entryPrice) * 100;
 
-      log(`持仓 ${sym}: ${qty.toFixed(4)}股 | 均价$${entryPrice.toFixed(2)} → $${currentPrice.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`, 'info');
+      log(`持仓 ${sym}: ${qty.toFixed(4)}股 | 均价$${entryPrice.toFixed(2)} → $${currentPrice.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)${positionPartialTP[sym] ? ' [已部分止盈]' : ''}`, 'info');
 
-      // 记录首次入场时间（用于时间止损）
-      if (!positionEntryTime[sym]) {
-        positionEntryTime[sym] = Date.now();
-      }
-
+      if (!positionEntryTime[sym]) positionEntryTime[sym] = Date.now();
       if (!positionHighPrice[sym] || currentPrice > positionHighPrice[sym]) {
         positionHighPrice[sym] = currentPrice;
       }
       const highPrice = positionHighPrice[sym];
 
-      // 分级止损
-      const stopInfo = getEffectiveStopPrice(entryPrice, currentPrice, highPrice, stopLossPct, pnlPct);
-      const effectiveStop = stopInfo.price;
-      const effectiveStopPct = ((effectiveStop - entryPrice) / entryPrice) * 100;
-
-      // 止盈
-      if (pnlPct >= takeProfitPct) {
-        log(`${sym} 止盈 (+${pnlPct.toFixed(2)}%)`, 'buy');
+      // ═══════════ 部分止盈触发 ═══════════
+      if (!positionPartialTP[sym] && pnlPct >= partialTPTriggerPct) {
+        const halfQty = qty / 2;
+        log(`${sym} 部分止盈触发 (+${pnlPct.toFixed(2)}%) → 卖出 50% (${halfQty.toFixed(4)}股)，剩余切换到跟踪止盈`, 'buy');
         try {
-          await closePosition(sym);
-          cleanupPositionState(sym, true);
-          log(`${sym} 平仓成功 (止盈) | 今日第${dailyTradeCount[sym]}次`, 'buy');
-        } catch (e) { log(`${sym} 平仓失败: ${e.message}`, 'sell'); }
-        continue;
+          const order = await submitOrder(sym, halfQty.toFixed(4), 'sell', 'market', 'day');
+          log(`${sym} 部分止盈成交 | ${order.status}`, 'buy');
+          positionPartialTP[sym] = true;
+          // 高点不变，继续跟踪
+        } catch (e) {
+          log(`${sym} 部分止盈失败: ${e.message}`, 'sell');
+        }
+        // 不 continue，让剩余仓位继续在本轮进行止损/跟踪检查
       }
 
-      // 止损（分级）
-      if (currentPrice <= effectiveStop) {
-        log(`${sym} 止损 [${stopInfo.stage}] 现价$${currentPrice.toFixed(2)} ≤ 止损线$${effectiveStop.toFixed(2)} (${effectiveStopPct.toFixed(2)}%)`, 'sell');
-        try {
-          await closePosition(sym);
-          cleanupPositionState(sym, true);
-          log(`${sym} 平仓成功 (止损) | 今日第${dailyTradeCount[sym]}次`, 'sell');
-        } catch (e) { log(`${sym} 平仓失败: ${e.message}`, 'sell'); }
-        continue;
+      // ═══════════ 跟踪止盈（部分止盈后的剩余仓位） ═══════════
+      if (positionPartialTP[sym]) {
+        const trailPrice = highPrice * (1 - trailingTPRetreatPct / 100);
+        if (currentPrice <= trailPrice) {
+          log(`${sym} 跟踪止盈触发 现价$${currentPrice.toFixed(2)} ≤ 跟踪线$${trailPrice.toFixed(2)}（高点$${highPrice.toFixed(2)} 回撤${trailingTPRetreatPct}%）`, 'buy');
+          try {
+            await closePosition(sym);
+            cleanupPositionState(sym, true);
+            log(`${sym} 剩余仓位平仓成功 (跟踪止盈) | 今日第${dailyTradeCount[sym]}次`, 'buy');
+          } catch (e) { log(`${sym} 平仓失败: ${e.message}`, 'sell'); }
+          continue;
+        }
       }
 
-      // 时间止损（方案 A）
-      const entryTime = positionEntryTime[sym];
-      const holdMin = (Date.now() - entryTime) / 60000;
-      if (holdMin >= TIME_STOP_MINUTES && pnlPct < TIME_STOP_MIN_PNL) {
-        log(`${sym} 时间止损（持仓 ${holdMin.toFixed(0)} 分钟，浮盈 ${pnlPct.toFixed(2)}% < ${TIME_STOP_MIN_PNL}%）`, 'sell');
+      // ═══════════ 分级止损（未部分止盈时） ═══════════
+      if (!positionPartialTP[sym]) {
+        const stopInfo = getEffectiveStopPrice(entryPrice, currentPrice, highPrice, stopLossPct, pnlPct);
+        const effectiveStop = stopInfo.price;
+        const effectiveStopPct = ((effectiveStop - entryPrice) / entryPrice) * 100;
+
+        if (currentPrice <= effectiveStop) {
+          log(`${sym} 止损 [${stopInfo.stage}] 现价$${currentPrice.toFixed(2)} ≤ 止损线$${effectiveStop.toFixed(2)} (${effectiveStopPct.toFixed(2)}%)`, 'sell');
+          try {
+            await closePosition(sym);
+            cleanupPositionState(sym, true);
+            log(`${sym} 平仓成功 (止损) | 今日第${dailyTradeCount[sym]}次`, 'sell');
+          } catch (e) { log(`${sym} 平仓失败: ${e.message}`, 'sell'); }
+          continue;
+        }
+      }
+
+      // ═══════════ 时间止损（仅浮亏时启用） ═══════════
+      const holdMin = (Date.now() - positionEntryTime[sym]) / 60000;
+      if (holdMin >= timeStopMinutes && pnlPct < TIME_STOP_MAX_PNL) {
+        log(`${sym} 时间止损（持仓 ${holdMin.toFixed(0)} 分钟，浮盈 ${pnlPct.toFixed(2)}% < 0%）`, 'sell');
         try {
           await closePosition(sym);
           cleanupPositionState(sym, true);
@@ -847,10 +947,10 @@ async function runOneCycle() {
         continue;
       }
 
-      // 反向信号
+      // ═══════════ 新闻情绪退出（放宽到利润 < 1%） ═══════════
       const cachedNews = newsCache[sym] || { bullish: false, score: 0, source: 'none' };
-      if (!cachedNews.bullish && cachedNews.score < 0.15 && pnlPct < 0.5) {
-        log(`${sym} 反向信号平仓 (新闻来源: ${cachedNews.source})`, 'sell');
+      if (!cachedNews.bullish && cachedNews.score < 0.15 && pnlPct < NEWS_EXIT_MAX_PNL) {
+        log(`${sym} 反向信号平仓 (新闻来源: ${cachedNews.source}, 浮盈 ${pnlPct.toFixed(2)}%)`, 'sell');
         try {
           await closePosition(sym);
           cleanupPositionState(sym, true);
@@ -859,7 +959,7 @@ async function runOneCycle() {
         continue;
       }
 
-      // 加仓（最多 1 次）
+      // ═══════════ 加仓 ═══════════
       const posAdded = positionHighPrice[sym + '_added'];
       if (!posAdded && pnlPct >= addTriggerPct && dailyTradeCount[sym] < MAX_DAILY_TRADES_PER_SYMBOL) {
         const currentExposurePct = (marketValue / totalEquity) * 100;
@@ -993,6 +1093,7 @@ async function runOneCycle() {
       if (result.success) {
         positionHighPrice[c.sym] = c.price;
         positionEntryTime[c.sym] = Date.now();
+        positionPartialTP[c.sym] = false;
         runningExposure += positionValue;
         opened++;
         log(`买入 ${c.sym} 完成 | 仓位 $${positionValue.toFixed(2)}（${baseSizePct}%）`, 'buy');
@@ -1023,10 +1124,11 @@ function updatePositionDisplay(positions) {
     const current = parseFloat(p.current_price);
     const pnlPct = ((current - entry) / entry) * 100;
     const color = pnlPct >= 0 ? '#3fb950' : '#f85149';
+    const partial = positionPartialTP[p.symbol] ? ' <span style="color:#d29922;">[已部分止盈]</span>' : '';
     return `<div style="margin-bottom:5px;">
       <strong>${p.symbol}</strong>: ${parseFloat(p.qty).toFixed(4)}股 |
       均价$${entry.toFixed(2)} → $${current.toFixed(2)} |
-      <span style="color:${color};">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</span>
+      <span style="color:${color};">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</span>${partial}
     </div>`;
   }).join('');
 }
@@ -1059,10 +1161,11 @@ function startLoop() {
   document.getElementById('btnStop').style.display = 'block';
 
   log(`实时交易已启动 | 检查${intervalMin}分钟 | 新闻10/12分钟`, 'buy');
-  log(`分级止损: 成本 → 保本(0.3%) → +0.5%(0.8%) → +1%+跟踪0.6%(1.5%)`, 'info');
-  log(`时间止损: ${TIME_STOP_MINUTES}分钟浮盈<${TIME_STOP_MIN_PNL}%平仓`, 'info');
+  log(`止盈: ${document.getElementById('partialTPTrigger').value}% 卖50% → 剩余跟踪回撤${document.getElementById('trailingTPRetreat').value}%`, 'info');
+  log(`止损: 成本 → 保本(0.3%) → +0.5%(0.8%) → +1%+跟踪0.6%(1.5%)`, 'info');
+  log(`时间止损: ${document.getElementById('timeStopMinutes').value}分钟仅浮亏时启用`, 'info');
+  log(`新闻退出: 浮盈<${NEWS_EXIT_MAX_PNL}% 且情绪转弱`, 'info');
   log(`收盘强平: 美东 15:55`, 'info');
-  log(`止盈: ${document.getElementById('takeProfit').value}% | 加仓触发: ${document.getElementById('addTrigger').value}%`, 'info');
 
   runOneCycle().catch(e => { console.error(e); log(`循环错误: ${e.message}`, 'sell'); });
 
@@ -1108,6 +1211,9 @@ document.addEventListener('DOMContentLoaded', () => {
   autoCheckInterval = setInterval(checkAutoStartStop, 30 * 1000);
   checkAutoStartStop();
 
+  calculateSymbolRealizedPnl();
+  pnlRefreshInterval = setInterval(calculateSymbolRealizedPnl, PNL_REFRESH_INTERVAL);
+
   updateLivePrices();
   priceRefreshInterval = setInterval(updateLivePrices, PRICE_REFRESH_INTERVAL);
 
@@ -1117,10 +1223,9 @@ document.addEventListener('DOMContentLoaded', () => {
   log('注意：请确保 Alpaca 账户是 Paper Trading 模式。', 'warn');
   log(`新闻源: APITube → Marketaux → Kiprio`, 'info');
   log(`多持仓模式：最多5只，单只≤10%，总≤75%`, 'info');
-  log(`实时价格 + 当日盈亏：每30秒刷新`, 'info');
-  log(`分级止损: 成本 → 保本 → +0.5% → +1%+跟踪`, 'info');
-  log(`时间止损: ${TIME_STOP_MINUTES}分钟 | 收盘强平: 15:55`, 'info');
-  log(`初始资金: $${INITIAL_CAPITAL.toLocaleString()}`, 'info');
+  log(`实时价格 + 当日/当月/当年盈亏：每30秒刷新`, 'info');
+  log(`止盈: 1.5% 卖50% + 剩余跟踪回撤0.8%`, 'info');
+  log(`时间止损: 仅浮亏时启用 | 收盘强平: 15:55`, 'info');
 });
 </script>
 </body>
