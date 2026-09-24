@@ -64,6 +64,10 @@
   .price-pnl-line { font-size: 10px; white-space: nowrap; display: flex; justify-content: space-between; padding: 0 1px; }
   .price-pnl-label { color: #8b949e; }
   .price-pnl-value { font-weight: 600; }
+  .price-stop-block { margin-top: 3px; padding-top: 3px; border-top: 1px solid #21262d; font-size: 10px; line-height: 1.3; text-align: center; }
+  .price-stop-atr { color: #8b949e; }
+  .price-stop-value { color: #58a6ff; font-weight: 600; }
+  .price-stop-stage { color: #d29922; font-size: 9px; }
   .price-up { color: #3fb950; }
   .price-down { color: #f85149; }
   .price-flat { color: #8b949e; }
@@ -197,7 +201,7 @@
       <div class="stat"><div class="stat-label">总敞口 (%)</div><div class="stat-value" id="statExposure">—</div></div>
     </div>
 
-    <h3 style="margin-top:10px;">实时价格 + 盈亏（当日 / 当月 / 当年）</h3>
+    <h3 style="margin-top:10px;">实时价格 + 盈亏 + 动态止损</h3>
     <div class="price-grid" id="livePrices">
       <div class="price-card"><div class="price-symbol">加载中...</div></div>
     </div>
@@ -243,6 +247,7 @@ const MAX_DAILY_TRADES_PER_SYMBOL = 3;
 const COMPOSITE_HIGH_THRESHOLD = 0.8;
 const PRICE_REFRESH_INTERVAL = 30 * 1000;
 const PNL_REFRESH_INTERVAL = 5 * 60 * 1000;
+const ATR_REFRESH_INTERVAL = 5 * 60 * 1000;   // ATR 缓存刷新间隔
 const INITIAL_CAPITAL = 100000;
 
 // ATR 动态止损 + 市场过滤参数
@@ -290,6 +295,9 @@ let positionPartialTP = {};
 
 let positionAtrPct = {};
 let positionStopLossPct = {};
+
+// ATR 缓存（用于价格卡片显示）
+let symbolAtrCache = {};      // { symbol: { atrPct, updatedAt } }
 
 let autoStartedToday = false;
 let autoStoppedToday = false;
@@ -390,7 +398,7 @@ function updatePnlDisplay(account) {
 }
 
 // ═══════════════════════════════════════════════
-// 市场状态更新
+// 市场状态
 // ═══════════════════════════════════════════════
 async function updateMarketState() {
   try {
@@ -477,7 +485,7 @@ function calculateDynamicStopLoss(atrPct) {
 
 function getEffectiveStopPrice(entryPrice, currentPrice, highPrice, stopLossPct, pnlPct) {
   if (pnlPct < STAGE_BREAKEVEN_PCT) {
-    return { price: entryPrice * (1 - stopLossPct / 100), stage: `成本止损(${stopLossPct.toFixed(2)}%)` };
+    return { price: entryPrice * (1 - stopLossPct / 100), stage: `成本止损` };
   } else if (pnlPct < STAGE_LOCK_05_PCT) {
     return { price: entryPrice, stage: '保本' };
   } else if (pnlPct < STAGE_LOCK_1_PCT) {
@@ -486,6 +494,45 @@ function getEffectiveStopPrice(entryPrice, currentPrice, highPrice, stopLossPct,
     const lock = entryPrice * 1.01;
     const trail = highPrice * (1 - TRAILING_STOP_PCT);
     return { price: Math.max(lock, trail), stage: '锁定+1%+跟踪' };
+  }
+}
+
+// 获取当前止损阶段（仅用于显示）
+function getStopStageName(pnlPct) {
+  if (pnlPct < STAGE_BREAKEVEN_PCT) return '成本止损';
+  if (pnlPct < STAGE_LOCK_05_PCT) return '保本';
+  if (pnlPct < STAGE_LOCK_1_PCT) return '锁定+0.5%';
+  return '锁定+1%+跟踪';
+}
+
+// ═══════════════════════════════════════════════
+// ATR 缓存更新
+// ═══════════════════════════════════════════════
+async function refreshAtrCache(symbols) {
+  const timeframe = parseInt(document.getElementById('timeframe').value);
+  const tfMap = { 1: '1Min', 5: '5Min' };
+  for (const sym of symbols) {
+    const cached = symbolAtrCache[sym];
+    if (cached && (Date.now() - cached.updatedAt) < ATR_REFRESH_INTERVAL) continue;
+
+    try {
+      const url = `${WORKER_URL}/alpaca-data/v2/stocks/${sym}/bars?timeframe=${tfMap[timeframe]}&limit=20&feed=iex&sort=desc`;
+      const resp = await fetch(url);
+      if (!resp.ok) continue;
+      const json = await resp.json();
+      const bars = (json.bars || []).reverse();
+      if (bars.length < 20) continue;
+
+      let atrSum = 0;
+      for (let j = 0; j < 20; j++) {
+        atrSum += ((bars[j].h - bars[j].l) / bars[j].c) * 100;
+      }
+      const atrPct = atrSum / 20;
+      symbolAtrCache[sym] = { atrPct, updatedAt: Date.now() };
+    } catch (e) {
+      console.warn(`ATR 刷新失败 ${sym}:`, e);
+    }
+    await new Promise(r => setTimeout(r, 200));
   }
 }
 
@@ -543,13 +590,16 @@ async function calculateSymbolRealizedPnl() {
 }
 
 // ═══════════════════════════════════════════════
-// 实时价格 + 三层盈亏
+// 实时价格 + 三层盈亏 + 动态止损
 // ═══════════════════════════════════════════════
 async function updateLivePrices() {
   const symbols = getSelectedSymbols();
   if (symbols.length === 0) return;
 
   try {
+    // 先刷新 ATR 缓存（限速）
+    await refreshAtrCache(symbols);
+
     const symbolsParam = symbols.join(',');
     const [snapResp, posResp] = await Promise.all([
       fetch(`${WORKER_URL}/alpaca-data/v2/stocks/snapshots?symbols=${symbolsParam}&feed=iex`),
@@ -559,11 +609,17 @@ async function updateLivePrices() {
     const snapshots = snapResp.ok ? await snapResp.json() : {};
     const positions = posResp.ok ? await posResp.json() : [];
 
+    // 持仓映射（用于显示盈亏和当前阶段）
     const posMap = {};
     (positions || []).forEach(p => {
+      const entry = parseFloat(p.avg_entry_price);
+      const current = parseFloat(p.current_price);
+      const pnlPct = ((current - entry) / entry) * 100;
       posMap[p.symbol] = {
         intradayPl: parseFloat(p.unrealized_intraday_pl || 0),
-        unrealizedPl: parseFloat(p.unrealized_pl || 0)
+        unrealizedPl: parseFloat(p.unrealized_pl || 0),
+        pnlPct,
+        stage: getStopStageName(pnlPct)
       };
     });
 
@@ -575,6 +631,8 @@ async function updateLivePrices() {
       const snap = snapshots[sym];
       const pos = posMap[sym];
       const realized = symbolRealizedPnl[sym] || { month: 0, year: 0 };
+      const atrCached = symbolAtrCache[sym];
+      const atrPct = atrCached ? atrCached.atrPct : null;
 
       let priceStr = '—';
       let changeStr = '';
@@ -594,6 +652,7 @@ async function updateLivePrices() {
         changeStr = prevClose ? `${arrow} ${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)` : '';
       }
 
+      // 盈亏
       let dayPl = 0, monthPl = 0, yearPl = 0;
       let hasPosition = false;
       if (pos) {
@@ -622,11 +681,36 @@ async function updateLivePrices() {
           </div>`
         : `<div class="price-pnl-block"><div class="price-pnl-line"><span class="price-pnl-label">未持有</span></div></div>`;
 
+      // 止损块
+      let stopBlock = '';
+      if (atrPct !== null) {
+        const dynStop = calculateDynamicStopLoss(atrPct);
+        if (hasPosition) {
+          // 持仓中：显示入场时的止损% + 当前阶段
+          const entryStopPct = positionStopLossPct[sym] || dynStop;
+          const stageName = pos.stage;
+          stopBlock = `<div class="price-stop-block">
+            <span class="price-stop-atr">ATR ${atrPct.toFixed(2)}%</span> →
+            <span class="price-stop-value">${entryStopPct.toFixed(2)}%</span>
+            <div class="price-stop-stage">[${stageName}]</div>
+          </div>`;
+        } else {
+          // 空仓：显示预估止损
+          stopBlock = `<div class="price-stop-block">
+            <span class="price-stop-atr">ATR ${atrPct.toFixed(2)}%</span> →
+            <span class="price-stop-value">${dynStop.toFixed(2)}%</span>
+          </div>`;
+        }
+      } else {
+        stopBlock = `<div class="price-stop-block"><span class="price-stop-atr">ATR 加载中...</span></div>`;
+      }
+
       cards.push(`<div class="price-card">
         <div class="price-symbol">${sym}</div>
         <div class="price-value">${priceStr}</div>
         <div class="price-change ${colorClass}">${changeStr}</div>
         ${pnlBlock}
+        ${stopBlock}
       </div>`);
     }
 
@@ -952,7 +1036,6 @@ async function runOneCycle() {
       updateNewsCacheAsync(symbols);
     }
 
-    // ✅ 显示动物 + 中文
     const marketLabel = marketState.isBull ? '🐂 牛市' : '🐻 熊市';
     log(`── 检查周期 (${symbols.length}只) ${marketLabel} ──`, 'info');
 
@@ -1022,7 +1105,10 @@ async function runOneCycle() {
       const highPrice = positionHighPrice[sym];
 
       let atrPct = positionAtrPct[sym];
-      if (atrPct === undefined || atrPct === null) atrPct = 1.5;
+      if (atrPct === undefined || atrPct === null) {
+        if (symbolAtrCache[sym]) atrPct = symbolAtrCache[sym].atrPct;
+        else atrPct = 1.5;
+      }
       const dynamicStopLossPct = calculateDynamicStopLoss(atrPct);
       positionStopLossPct[sym] = dynamicStopLossPct;
 
@@ -1262,7 +1348,8 @@ function updatePositionDisplay(positions) {
     const color = pnlPct >= 0 ? '#3fb950' : '#f85149';
     const partial = positionPartialTP[p.symbol] ? ' <span style="color:#d29922;">[已部分止盈]</span>' : '';
     const dynStop = positionStopLossPct[p.symbol];
-    const stopInfo = dynStop ? ` <span style="color:#58a6ff;">[止损${dynStop.toFixed(2)}%]</span>` : '';
+    const stage = getStopStageName(pnlPct);
+    const stopInfo = dynStop ? ` <span style="color:#58a6ff;">[止损${dynStop.toFixed(2)}% ${stage}]</span>` : '';
     return `<div style="margin-bottom:5px;">
       <strong>${p.symbol}</strong>: ${parseFloat(p.qty).toFixed(4)}股 |
       均价$${entry.toFixed(2)} → $${current.toFixed(2)} |
@@ -1357,7 +1444,9 @@ document.addEventListener('DOMContentLoaded', () => {
   updateLivePrices();
   priceRefreshInterval = setInterval(updateLivePrices, PRICE_REFRESH_INTERVAL);
 
-  document.getElementById('symbols').addEventListener('change', updateLivePrices);
+  document.getElementById('symbols').addEventListener('change', () => {
+    updateLivePrices();
+  });
 
   log('面板就绪。自动启停已开启，默认美东 9:29 启动 / 16:02 停止。', 'info');
   log('注意：请确保 Alpaca 账户是 Paper Trading 模式。', 'warn');
