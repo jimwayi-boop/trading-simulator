@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>止损回测工具</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0d1117; color: #c9d1d9; padding: 16px; font-size: 14px; }
+  .container { max-width: 1400px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 8px; }
+  h2 { font-size: 14px; margin: 20px 0 8px 0; color: #58a6ff; text-transform: uppercase; letter-spacing: .5px; }
+  .desc { font-size: 12px; color: #8b949e; margin-bottom: 12px; line-height: 1.6; }
+
+  .controls { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .controls label { font-size: 12px; color: #8b949e; }
+  .controls input[type="date"], .controls input[type="text"] { padding: 6px 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 5px; color: #c9d1d9; font-size: 13px; }
+  .controls .symbols-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .controls .symbols-group label { display: flex; align-items: center; gap: 3px; font-size: 13px; color: #c9d1d9; margin: 0; }
+  .controls button { padding: 7px 14px; background: #238636; color: #fff; border: none; border-radius: 5px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .controls button:hover { background: #2ea043; }
+  .controls button:disabled { background: #30363d; color: #8b949e; cursor: not-allowed; }
+  .controls button.secondary { background: #21262d; border: 1px solid #30363d; }
+  .controls button.secondary:hover { background: #30363d; }
+
+  .preset-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .preset-btn { padding: 5px 10px; background: #21262d; border: 1px solid #30363d; border-radius: 5px; color: #c9d1d9; font-size: 12px; cursor: pointer; }
+  .preset-btn:hover { background: #30363d; }
+
+  .progress { margin-top: 12px; padding: 10px 14px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; font-size: 13px; display: none; }
+  .progress-bar { width: 100%; height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; margin-top: 8px; }
+  .progress-fill { height: 100%; background: #58a6ff; width: 0%; transition: width .3s; }
+
+  .summary-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+  .stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px 12px; }
+  .stat-label { font-size: 11px; color: #8b949e; }
+  .stat-value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+  .profit { color: #3fb950; }
+  .loss { color: #f85149; }
+  .warn { color: #d29922; }
+  .blue { color: #58a6ff; }
+
+  table { width: 100%; border-collapse: collapse; background: #161b22; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; font-size: 13px; margin-top: 8px; }
+  th { background: #21262d; color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; padding: 8px 10px; text-align: left; font-weight: 600; }
+  td { padding: 8px 10px; border-top: 1px solid #21262d; }
+  tr:hover { background: #1c2128; }
+  tr.best-row { background: #23863622; }
+  tr.best-row td { color: #3fb950; font-weight: 600; }
+
+  .hint { font-size: 11px; color: #8b949e; margin-top: 8px; line-height: 1.6; }
+  .error { padding: 12px; background: #f8514922; color: #f85149; border: 1px solid #f8514944; border-radius: 6px; margin-top: 12px; }
+  .empty { padding: 20px; text-align: center; color: #8b949e; font-size: 13px; }
+
+  .rec-box { padding: 14px; border-radius: 8px; margin-top: 16px; font-size: 14px; line-height: 1.7; }
+  .rec-green { background: #3fb95022; border: 1px solid #3fb95044; color: #3fb950; }
+  .rec-red { background: #f8514922; border: 1px solid #f8514944; color: #f85149; }
+  .rec-yellow { background: #d2992222; border: 1px solid #d2992244; color: #d29922; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>📉 止损回测工具</h1>
+  <div class="desc">
+    用历史 5 分钟 K 线模拟策略入场，对每个止损百分比分别回测。输出止损触发次数、止损后 30 分钟内反弹比例（假止损）、净盈亏。<br>
+    <strong>注意</strong>：此回测<strong>跳过新闻条件</strong>（新闻无法精确回测），只使用动量 + ATR + K线振幅 + 趋势确认。因此结果只反映<strong>止损行为</strong>，不代表策略的整体表现。
+  </div>
+
+  <div class="controls">
+    <label>开始日期：</label>
+    <input type="date" id="startDate">
+    <label>结束日期：</label>
+    <input type="date" id="endDate">
+
+    <div class="symbols-group" id="symbolsGroup">
+      <label><input type="checkbox" value="TSLA" checked> TSLA</label>
+      <label><input type="checkbox" value="AAPL" checked> AAPL</label>
+      <label><input type="checkbox" value="GOOGL" checked> GOOGL</label>
+      <label><input type="checkbox" value="NVDA" checked> NVDA</label>
+      <label><input type="checkbox" value="META" checked> META</label>
+    </div>
+
+    <button id="btnRun">▶ 开始回测</button>
+  </div>
+
+  <div class="preset-row">
+    <button class="preset-btn" data-days="5">最近 5 天</button>
+    <button class="preset-btn" data-days="10">最近 10 天</button>
+    <button class="preset-btn" data-days="20">最近 20 天</button>
+    <button class="preset-btn" data-days="30">最近 30 天</button>
+    <button class="preset-btn" data-days="60">最近 60 天</button>
+  </div>
+
+  <div class="progress" id="progress">
+    <span id="progressText">准备中...</span>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <div id="resultArea"></div>
+</div>
+
+<script>
+const WORKER_URL = "https://trading-proxy.jimwayi.workers.dev";
+
+// ═══════════════════════════════════════════════
+// 回测参数
+// ═══════════════════════════════════════════════
+const TIMEFRAME = '5Min';
+const MOMENTUM_THRESHOLD_PCT = 0.35;   // 过去3根K线累计涨幅
+const ATR_THRESHOLD_PCT = 1.5;          // 20根平均振幅
+const BAR_RANGE_MAX_PCT = 1.0;          // 当前K线振幅
+const TAKE_PROFIT_PCT = 2.5;            // 止盈
+const STOP_LOSS_OPTIONS = [1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];  // 扫描的止损
+const REBOUND_THRESHOLD_PCT = 0.5;      // 止损后反弹超过此值 = 假止损
+const REBOUND_BARS = 6;                 // 止损后跟踪 6 根 K 线（30 分钟）
+const MAX_CONCURRENT = 1;               // 每次只持 1 只
+
+// ═══════════════════════════════════════════════
+// UI 事件
+// ═══════════════════════════════════════════════
+const today = new Date();
+const d10ago = new Date(today.getTime() - 10 * 24 * 3600 * 1000);
+document.getElementById('endDate').value = today.toISOString().split('T')[0];
+document.getElementById('startDate').value = d10ago.toISOString().split('T')[0];
+
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const days = parseInt(btn.dataset.days);
+    const end = new Date();
+    const start = new Date(end.getTime() - days * 24 * 3600 * 1000);
+    document.getElementById('endDate').value = end.toISOString().split('T')[0];
+    document.getElementById('startDate').value = start.toISOString().split('T')[0];
+  });
+});
+
+document.getElementById('btnRun').addEventListener('click', runBacktest);
+
+// ═══════════════════════════════════════════════
+// 主流程
+// ═══════════════════════════════════════════════
+async function runBacktest() {
+  const startDate = document.getElementById('startDate').value;
+  const endDate = document.getElementById('endDate').value;
+  const symbols = Array.from(document.querySelectorAll('#symbolsGroup input:checked')).map(c => c.value);
+
+  if (!startDate || !endDate) { alert('请选择开始和结束日期'); return; }
+  if (symbols.length === 0) { alert('请至少选择一只股票'); return; }
+
+  const resultArea = document.getElementById('resultArea');
+  resultArea.innerHTML = '';
+  document.getElementById('btnRun').disabled = true;
+
+  const progress = document.getElementById('progress');
+  const progressText = document.getElementById('progressText');
+  const progressFill = document.getElementById('progressFill');
+  progress.style.display = 'block';
+
+  try {
+    // 1. 拉取所有股票的历史 K 线
+    const allBars = {};
+    for (let i = 0; i < symbols.length; i++) {
+      const sym = symbols[i];
+      progressText.textContent = `拉取 ${sym} 历史 K 线...`;
+      progressFill.style.width = `${((i + 0.5) / symbols.length) * 30}%`;
+
+      const bars = await fetchBars(sym, startDate, endDate);
+      allBars[sym] = bars;
+      console.log(`${sym}: ${bars.length} 根 K 线`);
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    // 2. 用统一的入场信号生成模拟交易（不依赖止损参数）
+    progressText.textContent = '生成入场信号...';
+    progressFill.style.width = '40%';
+
+    const entrySignals = {};   // { symbol: [ {index, price, time} ] }
+    for (const sym of symbols) {
+      entrySignals[sym] = findEntrySignals(allBars[sym]);
+    }
+
+    // 3. 对每个止损参数分别回测
+    const results = {};
+    for (let si = 0; si < STOP_LOSS_OPTIONS.length; si++) {
+      const sl = STOP_LOSS_OPTIONS[si];
+      progressText.textContent = `回测止损 ${sl}%...`;
+      progressFill.style.width = `${40 + (si / STOP_LOSS_OPTIONS.length) * 55}%`;
+
+      results[sl] = simulateWithStopLoss(allBars, entrySignals, sl);
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    progressFill.style.width = '100%';
+    progressText.textContent = '完成';
+
+    // 4. 渲染
+    renderResults(results, symbols, startDate, endDate);
+
+  } catch (e) {
+    console.error(e);
+    resultArea.innerHTML = `<div class="error">错误：${e.message}</div>`;
+  } finally {
+    document.getElementById('btnRun').disabled = false;
+    setTimeout(() => { progress.style.display = 'none'; }, 1500);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// 拉取 K 线
+// ═══════════════════════════════════════════════
+async function fetchBars(symbol, startDate, endDate) {
+  // 结束日期+1天，确保包含完整交易日
+  const start = new Date(startDate + 'T13:00:00Z').toISOString();
+  const end = new Date(new Date(endDate).getTime() + 24 * 3600 * 1000).toISOString();
+
+  const url = `${WORKER_URL}/alpaca-data/v2/stocks/${symbol}/bars?timeframe=${TIMEFRAME}&start=${start}&end=${end}&limit=10000&feed=iex&sort=asc`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`${symbol} K线 HTTP ${resp.status}`);
+  const data = await resp.json();
+  return (data.bars || []).map(b => ({
+    time: new Date(b.t).getTime(),
+    open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v
+  }));
+}
+
+// ═══════════════════════════════════════════════
+// 找入场信号
+// ═══════════════════════════════════════════════
+function findEntrySignals(bars) {
+  if (!bars || bars.length < 22) return [];
+
+  const signals = [];
+  let lastExitIndex = -1;
+
+  for (let i = 20; i < bars.length; i++) {
+    const bar = bars[i];
+    const price = bar.close;
+
+    // 当前K线振幅过滤
+    const barRange = ((bar.high - bar.low) / bar.close) * 100;
+    if (barRange > BAR_RANGE_MAX_PCT) continue;
+
+    // ATR 过滤
+    let atrSum = 0;
+    for (let j = i - 19; j <= i; j++) {
+      atrSum += ((bars[j].high - bars[j].low) / bars[j].close) * 100;
+    }
+    const atr = atrSum / 20;
+    if (atr > ATR_THRESHOLD_PCT) continue;
+
+    // 动量
+    const pastPrice = bars[i - 3].close;
+    const momentumPct = ((price - pastPrice) / pastPrice) * 100;
+    if (momentumPct < MOMENTUM_THRESHOLD_PCT) continue;
+
+    // 趋势确认（过去15分钟=3根5分钟K线）
+    const recent = bars.slice(i - 2, i + 1);
+    if (recent.length < 3) continue;
+    if (recent[recent.length - 1].close <= recent[0].open) continue;
+    let upCount = 0;
+    for (let k = 1; k < recent.length; k++) {
+      if (recent[k].close > recent[k - 1].close) upCount++;
+    }
+    if (upCount < 2) continue;
+
+    // 避免信号过密（至少间隔 3 根 K 线）
+    if (i - lastExitIndex < 3) continue;
+
+    signals.push({ index: i, price: price, time: bar.time });
+  }
+
+  return signals;
+}
+
+// ═══════════════════════════════════════════════
+// 模拟指定止损的回测
+// ═══════════════════════════════════════════════
+function simulateWithStopLoss(allBars, entrySignals, stopLossPct) {
+  const trades = [];
+  let position = null;
+
+  // 收集所有股票的信号，按时间排序，避免并发（MAX_CONCURRENT=1）
+  const allSignals = [];
+  for (const sym in entrySignals) {
+    entrySignals[sym].forEach(s => allSignals.push({ sym, ...s }));
+  }
+  allSignals.sort((a, b) => a.time - b.time);
+
+  for (const sig of allSignals) {
+    if (position) continue;   // 已持仓，跳过（简化：每次只持1只）
+
+    const bars = allBars[sig.sym];
+    const entryIdx = sig.index;
+    const entryPrice = sig.price;
+
+    // 模拟持仓，从入场后下一根K线开始
+    const stopPrice = entryPrice * (1 - stopLossPct / 100);
+    const tpPrice = entryPrice * (1 + TAKE_PROFIT_PCT / 100);
+    let exitIdx = -1;
+    let exitPrice = null;
+    let exitReason = null;
+
+    for (let j = entryIdx + 1; j < bars.length; j++) {
+      const b = bars[j];
+      // 先检查止损（更保守，假设最坏情况先触发）
+      if (b.low <= stopPrice) {
+        exitIdx = j;
+        exitPrice = stopPrice;
+        exitReason = 'stop';
+        break;
+      }
+      // 再检查止盈
+      if (b.high >= tpPrice) {
+        exitIdx = j;
+        exitPrice = tpPrice;
+        exitReason = 'tp';
+        break;
+      }
+    }
+
+    if (exitIdx === -1) {
+      // 未触发任何出场，跳过这笔
+      continue;
+    }
+
+    const pnlPct = ((exitPrice - entryPrice) / entryPrice) * 100;
+    const pnl = (exitPrice - entryPrice) / entryPrice * 100;  // 以百分比记录
+
+    // 止损后跟踪反弹（仅对止损交易）
+    let reboundPct = 0;
+    let rebounded = false;
+    if (exitReason === 'stop') {
+      const endIdx = Math.min(exitIdx + REBOUND_BARS, bars.length - 1);
+      let maxHigh = 0;
+      for (let k = exitIdx + 1; k <= endIdx; k++) {
+        if (bars[k].high > maxHigh) maxHigh = bars[k].high;
+      }
+      if (maxHigh > 0) {
+        reboundPct = ((maxHigh - exitPrice) / exitPrice) * 100;
+        rebounded = reboundPct >= REBOUND_THRESHOLD_PCT;
+      }
+    }
+
+    trades.push({
+      symbol: sig.sym,
+      entryTime: new Date(sig.time).toISOString(),
+      exitTime: new Date(bars[exitIdx].time).toISOString(),
+      entryPrice,
+      exitPrice,
+      pnlPct,
+      pnl,
+      exitReason,
+      reboundPct,
+      rebounded
+    });
+
+    position = { sym: sig.sym, exitIdx };
+    // 平仓后释放（简化逻辑：直接在下个循环就能开新仓）
+    position = null;
+  }
+
+  // 汇总
+  const stopTrades = trades.filter(t => t.exitReason === 'stop');
+  const tpTrades = trades.filter(t => t.exitReason === 'tp');
+  const reboundedCount = stopTrades.filter(t => t.rebounded).length;
+  const totalPnl = trades.reduce((s, t) => s + t.pnl, 0);
+  const avgStopRebound = stopTrades.length > 0
+    ? stopTrades.reduce((s, t) => s + t.reboundPct, 0) / stopTrades.length
+    : 0;
+
+  return {
+    stopLossPct,
+    totalTrades: trades.length,
+    stopCount: stopTrades.length,
+    tpCount: tpTrades.length,
+    reboundedCount,
+    whipsawRate: stopTrades.length > 0 ? (reboundedCount / stopTrades.length) * 100 : 0,
+    avgStopRebound,
+    totalPnl,
+    trades
+  };
+}
+
+// ═══════════════════════════════════════════════
+// 渲染结果
+// ═══════════════════════════════════════════════
+function renderResults(results, symbols, startDate, endDate) {
+  const area = document.getElementById('resultArea');
+
+  // 找出假止损比例最低 + 净盈亏最高的组合
+  let bestSl = null;
+  let bestScore = -Infinity;
+  for (const sl in results) {
+    const r = results[sl];
+    // 评分：净盈亏 - 假止损比例 * 0.05（惩罚假止损）
+    const score = r.totalPnl - r.whipsawRate * 0.05;
+    if (score > bestScore) { bestScore = score; bestSl = sl; }
+  }
+
+  let html = `<h2>📊 回测汇总（${startDate} 至 ${endDate}）</h2>`;
+  html += `<div class="hint">监控标的：${symbols.join('、')} | 止盈 ${TAKE_PROFIT_PCT}% | 假止损判定：止损后 30 分钟内反弹 ≥ ${REBOUND_THRESHOLD_PCT}%</div>`;
+
+  // 汇总卡片
+  const best = results[bestSl];
+  html += `
+    <div class="summary-cards">
+      <div class="stat-card"><div class="stat-label">最优止损</div><div class="stat-value blue">${bestSl}%</div></div>
+      <div class="stat-card"><div class="stat-label">总盈亏</div><div class="stat-value ${best.totalPnl >= 0 ? 'profit' : 'loss'}">${best.totalPnl >= 0 ? '+' : ''}${best.totalPnl.toFixed(2)}%</div></div>
+      <div class="stat-card"><div class="stat-label">假止损比例</div><div class="stat-value ${best.whipsawRate > 40 ? 'warn' : 'profit'}">${best.whipsawRate.toFixed(1)}%</div></div>
+      <div class="stat-card"><div class="stat-label">止损触发</div><div class="stat-value">${best.stopCount} 笔</div></div>
+    </div>
+  `;
+
+  // 详细对比表
+  html += `<h2>🔍 各止损参数对比</h2>`;
+  html += `<table><thead><tr>
+    <th>止损</th>
+    <th>总交易</th>
+    <th>止损笔数</th>
+    <th>止盈笔数</th>
+    <th>假止损笔数</th>
+    <th>假止损比例</th>
+    <th>止损后平均反弹</th>
+    <th>总盈亏%</th>
+  </tr></thead><tbody>`;
+
+  STOP_LOSS_OPTIONS.forEach(sl => {
+    const r = results[sl];
+    const isBest = sl.toString() === bestSl;
+    const pnlClass = r.totalPnl >= 0 ? 'profit' : 'loss';
+    const whipsawClass = r.whipsawRate > 40 ? 'warn' : r.whipsawRate < 20 ? 'profit' : '';
+    html += `<tr class="${isBest ? 'best-row' : ''}">
+      <td><strong>${sl}%</strong>${isBest ? ' ⭐' : ''}</td>
+      <td>${r.totalTrades}</td>
+      <td>${r.stopCount}</td>
+      <td>${r.tpCount}</td>
+      <td>${r.reboundedCount}</td>
+      <td class="${whipsawClass}">${r.whipsawRate.toFixed(1)}%</td>
+      <td>${r.avgStopRebound.toFixed(2)}%</td>
+      <td class="${pnlClass}">${r.totalPnl >= 0 ? '+' : ''}${r.totalPnl.toFixed(2)}%</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+
+  // 推荐
+  const bestRate = best.whipsawRate;
+  let recClass, recText;
+  if (bestRate > 40) {
+    recClass = 'rec-red';
+    recText = `当前最优止损 ${bestSl}%，但假止损比例仍为 ${bestRate.toFixed(1)}%（>40%）。说明在这个时间段内，止损容易被扫。建议考虑：1) 放宽止损到更大值；2) 改用 ATR 动态止损；3) 提高入场门槛（减少低质量信号）。`;
+  } else if (bestRate < 20) {
+    recClass = 'rec-green';
+    recText = `当前最优止损 ${bestSl}%，假止损比例仅 ${bestRate.toFixed(1)}%（<20%）。说明止损位置合理，不容易被噪音扫掉。可以保持该参数。`;
+  } else {
+    recClass = 'rec-yellow';
+    recText = `当前最优止损 ${bestSl}%，假止损比例 ${bestRate.toFixed(1)}%（20%-40%）。属于中间地带，建议在更长的时间段回测（例如 60 天）后再决定是否调整。`;
+  }
+  html += `<div class="rec-box ${recClass}"><strong>💡 建议：</strong>${recText}</div>`;
+
+  // 提示
+  html += `<div class="hint">
+    <strong>说明</strong>：<br>
+    1. 回测跳过了新闻情绪条件，只使用动量 + ATR + 趋势确认，因此交易次数会比真实策略更多。<br>
+    2. 假止损比例 = 止损触发后，价格在 30 分钟内反弹 ≥ ${REBOUND_THRESHOLD_PCT}% 的笔数 ÷ 止损总笔数。<br>
+    3. 总盈亏% 是每笔交易盈亏的简单加总，用于横向对比不同止损参数，不代表账户实际收益（未考虑仓位、加仓、部分止盈）。<br>
+    4. 时间段越短，样本越小，结论越不可靠。建议至少 30-60 天。
+  </div>`;
+
+  area.innerHTML = html;
+}
+</script>
+</body>
+</html>
