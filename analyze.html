@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>交易分析报告</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0d1117; color: #c9d1d9; padding: 16px; font-size: 14px; }
+  .container { max-width: 1400px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 12px; }
+  h2 { font-size: 15px; margin: 20px 0 8px 0; color: #58a6ff; text-transform: uppercase; letter-spacing: .5px; }
+  .controls { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .controls label { font-size: 13px; color: #8b949e; }
+  .controls input { padding: 6px 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 5px; color: #c9d1d9; font-size: 13px; }
+  .controls button { padding: 7px 14px; background: #238636; color: #fff; border: none; border-radius: 5px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .controls button:hover { background: #2ea043; }
+  .controls button.secondary { background: #21262d; border: 1px solid #30363d; }
+  .controls button.secondary:hover { background: #30363d; }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 12px; }
+  .stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px 12px; }
+  .stat-label { font-size: 11px; color: #8b949e; }
+  .stat-value { font-size: 20px; font-weight: 700; margin-top: 4px; }
+  .profit { color: #3fb950; }
+  .loss { color: #f85149; }
+  .warn { color: #d29922; }
+
+  table { width: 100%; border-collapse: collapse; background: #161b22; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; font-size: 13px; }
+  th { background: #21262d; color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; padding: 8px 10px; text-align: left; font-weight: 600; }
+  td { padding: 8px 10px; border-top: 1px solid #21262d; }
+  tr:hover { background: #1c2128; }
+  .tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; font-weight: 600; }
+  .tag-stop { background: #f8514933; color: #f85149; }
+  .tag-tp { background: #3fb95033; color: #3fb950; }
+  .tag-other { background: #8b949e33; color: #8b949e; }
+  .tag-rebound { background: #d2992233; color: #d29922; }
+  .tag-no-rebound { background: #1f6feb33; color: #58a6ff; }
+
+  .hint { font-size: 11px; color: #8b949e; margin-top: 6px; line-height: 1.5; }
+  .loading { padding: 20px; text-align: center; color: #8b949e; }
+  .error { padding: 12px; background: #f8514922; color: #f85149; border: 1px solid #f8514944; border-radius: 6px; margin-top: 12px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>📊 交易分析报告</h1>
+
+  <div class="controls">
+    <label>日期（美东）：</label>
+    <input type="date" id="dateInput">
+    <button id="btnGenerate">生成报告</button>
+    <button id="btnExport" class="secondary">导出 CSV</button>
+  </div>
+
+  <div class="hint">
+    提示：每天收盘后（美东 16:05 之后）打开此页面，选择当天日期，点击“生成报告”。报告会从 Alpaca 拉取当天所有成交记录，计算胜率、盈亏比、止损触发次数、止损后是否反弹等指标。点击“导出 CSV”保存当天数据。
+  </div>
+
+  <div id="reportArea"></div>
+</div>
+
+<script>
+const WORKER_URL = "https://trading-proxy.jimwayi.workers.dev";
+const STOP_LOSS_THRESHOLD = -1.3;   // 亏损超过此值视为止损（考虑滑点）
+const REBOUND_THRESHOLD = 0.5;       // 止损后反弹超过此值视为"已反弹"
+
+// 默认日期为今天
+document.getElementById('dateInput').value = new Date().toISOString().split('T')[0];
+
+let reportData = null;
+
+document.getElementById('btnGenerate').addEventListener('click', generateReport);
+document.getElementById('btnExport').addEventListener('click', exportCSV);
+
+async function generateReport() {
+  const dateStr = document.getElementById('dateInput').value;
+  if (!dateStr) { alert('请选择日期'); return; }
+
+  const area = document.getElementById('reportArea');
+  area.innerHTML = '<div class="loading">正在拉取数据...</div>';
+
+  try {
+    // 用美东时区构造日期范围
+    const dayStart = new Date(dateStr + 'T00:00:00-04:00').toISOString();
+    const dayEnd = new Date(dateStr + 'T23:59:59-04:00').toISOString();
+
+    const url = `${WORKER_URL}/alpaca-trade/v2/account/activities?activity_type=FILL&after=${dayStart}&until=${dayEnd}&direction=asc&page_size=500`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const activities = await resp.json();
+
+    if (!Array.isArray(activities) || activities.length === 0) {
+      area.innerHTML = `<div class="hint">${dateStr} 无交易记录。</div>`;
+      reportData = null;
+      return;
+    }
+
+    // ═══════════════════════════════════════
+    // 按 symbol 分组，用 FIFO 匹配买卖
+    // ═══════════════════════════════════════
+    const bySymbol = {};
+    activities.forEach(a => {
+      const sym = a.symbol;
+      if (!bySymbol[sym]) bySymbol[sym] = [];
+      bySymbol[sym].push({
+        side: a.side,
+        qty: parseFloat(a.qty),
+        price: parseFloat(a.price),
+        time: new Date(a.transaction_time).getTime() / 1000,
+        timeStr: a.transaction_time
+      });
+    });
+
+    // FIFO 匹配每只股票
+    const trades = [];
+    for (const sym in bySymbol) {
+      const list = bySymbol[sym].sort((a, b) => a.time - b.time);
+      const queue = []; // 买入队列
+      for (const act of list) {
+        if (act.side === 'buy') {
+          queue.push({ qty: act.qty, price: act.price, time: act.time });
+        } else {
+          // 卖出：从队列中 FIFO 匹配
+          let remaining = act.qty;
+          while (remaining > 0.0001 && queue.length > 0) {
+            const lot = queue[0];
+            const matched = Math.min(remaining, lot.qty);
+            const pnl = matched * (act.price - lot.price);
+            const cost = matched * lot.price;
+            const pnlPct = (pnl / cost) * 100;
+
+            // 记录这笔平仓
+            trades.push({
+              symbol: sym,
+              qty: matched,
+              entryPrice: lot.price,
+              exitPrice: act.price,
+              entryTime: lot.time,
+              exitTime: act.time,
+              entryTimeStr: new Date(lot.time * 1000).toISOString(),
+              exitTimeStr: act.timeStr,
+              pnl: pnl,
+              pnlPct: pnlPct,
+              cost: cost,
+              exitValue: matched * act.price
+            });
+
+            lot.qty -= matched;
+            remaining -= matched;
+            if (lot.qty < 0.0001) queue.shift();
+          }
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════
+    // 统计指标
+    // ═══════════════════════════════════════
+    const wins = trades.filter(t => t.pnl > 0);
+    const losses = trades.filter(t => t.pnl < 0);
+    const totalPnl = trades.reduce((s, t) => s + t.pnl, 0);
+    const avgWin = wins.length > 0 ? wins.reduce((s, t) => s + t.pnl, 0) / wins.length : 0;
+    const avgLoss = losses.length > 0 ? losses.reduce((s, t) => s + t.pnl, 0) / losses.length : 0;
+    const winRate = trades.length > 0 ? (wins.length / trades.length) * 100 : 0;
+    const profitFactor = avgLoss !== 0 ? Math.abs(avgWin / avgLoss) : 0;
+
+    // 止损交易
+    const stopLossTrades = trades.filter(t => t.pnlPct <= STOP_LOSS_THRESHOLD);
+
+    // ═══════════════════════════════════════
+    // 止损后反弹检测（对每笔止损交易，拉取止损后 30 分钟 K 线）
+    // ═══════════════════════════════════════
+    for (const t of stopLossTrades) {
+      try {
+        const after = new Date(t.exitTime * 1000).toISOString();
+        // 拉取该股票止损后的 1 分钟 K 线（30 根）
+        const barUrl = `${WORKER_URL}/alpaca-data/v2/stocks/${t.symbol}/bars?timeframe=1Min&limit=30&start=${after}&feed=iex&sort=asc`;
+        const barResp = await fetch(barUrl);
+        if (!barResp.ok) continue;
+        const barData = await barResp.json();
+        const bars = (barData.bars || []).filter(b => new Date(b.t).getTime() / 1000 > t.exitTime);
+        if (bars.length > 0) {
+          const maxHigh = Math.max(...bars.map(b => b.h));
+          t.postStopHigh = maxHigh;
+          t.postStopReboundPct = ((maxHigh - t.exitPrice) / t.exitPrice) * 100;
+          t.rebounded = t.postStopReboundPct >= REBOUND_THRESHOLD;
+        }
+      } catch (e) {
+        console.warn(`反弹检测失败 ${t.symbol}:`, e);
+      }
+    }
+
+    const reboundedCount = stopLossTrades.filter(t => t.rebounded).length;
+    const stoppedWhipsawRate = stopLossTrades.length > 0 ? (reboundedCount / stopLossTrades.length) * 100 : 0;
+
+    // ═══════════════════════════════════════
+    // 渲染
+    // ═══════════════════════════════════════
+    reportData = {
+      date: dateStr,
+      totalPnl,
+      trades,
+      summary: {
+        totalTrades: trades.length,
+        wins: wins.length,
+        losses: losses.length,
+        winRate,
+        avgWin,
+        avgLoss,
+        profitFactor,
+        stopLossCount: stopLossTrades.length,
+        stoppedWhipsawRate,
+        stoppedWhipsawCount: reboundedCount
+      }
+    };
+
+    renderReport(reportData);
+  } catch (e) {
+    console.error(e);
+    area.innerHTML = `<div class="error">错误：${e.message}</div>`;
+  }
+}
+
+function renderReport(data) {
+  const area = document.getElementById('reportArea');
+  const s = data.summary;
+
+  const totalPnlClass = s.totalPnl >= 0 ? 'profit' : 'loss';
+  const winRateClass = s.winRate >= 50 ? 'profit' : 'loss';
+  const pfClass = s.profitFactor >= 1 ? 'profit' : 'loss';
+  const whipsawClass = s.stoppedWhipsawRate > 40 ? 'warn' : 'profit';
+
+  // 总结面板
+  let html = `
+    <h2>📈 当日总结（${data.date}）</h2>
+    <div class="summary-grid">
+      <div class="stat-card"><div class="stat-label">总交易笔数</div><div class="stat-value">${s.totalTrades}</div></div>
+      <div class="stat-card"><div class="stat-label">总盈亏</div><div class="stat-value ${totalPnlClass}">${s.totalPnl >= 0 ? '+' : ''}$${s.totalPnl.toFixed(2)}</div></div>
+      <div class="stat-card"><div class="stat-label">胜率</div><div class="stat-value ${winRateClass}">${s.winRate.toFixed(1)}%</div></div>
+      <div class="stat-card"><div class="stat-label">盈亏比</div><div class="stat-value ${pfClass}">${s.profitFactor.toFixed(2)}</div></div>
+      <div class="stat-card"><div class="stat-label">止损触发</div><div class="stat-value">${s.stopLossCount} 笔</div></div>
+      <div class="stat-card"><div class="stat-label">止损后被扫</div><div class="stat-value ${whipsawClass}">${s.stoppedWhipsawRate.toFixed(1)}%</div></div>
+    </div>
+    <div class="hint">
+      平均盈利 $${s.avgWin.toFixed(2)} | 平均亏损 $${s.avgLoss.toFixed(2)} | 
+      止损后 30 分钟内反弹 ≥ 0.5% 的笔数：${s.stoppedWhipsawCount} / ${s.stopLossCount}
+    </div>
+  `;
+
+  // 交易明细表
+  html += `<h2>📋 交易明细（${data.trades.length} 笔）</h2>`;
+  if (data.trades.length === 0) {
+    html += '<div class="hint">无交易</div>';
+  } else {
+    html += '<table><thead><tr><th>股票</th><th>入场时间</th><th>出场时间</th><th>股数</th><th>入场价</th><th>出场价</th><th>盈亏</th><th>盈亏%</th><th>类型</th></tr></thead><tbody>';
+    data.trades.forEach(t => {
+      const pnlClass = t.pnl >= 0 ? 'profit' : 'loss';
+      let tag = '<span class="tag tag-other">其他</span>';
+      if (t.pnlPct <= STOP_LOSS_THRESHOLD) {
+        tag = t.rebounded
+          ? `<span class="tag tag-stop">止损</span> <span class="tag tag-rebound">被扫↑${t.postStopReboundPct.toFixed(2)}%</span>`
+          : `<span class="tag tag-stop">止损</span> <span class="tag tag-no-rebound">未反弹</span>`;
+      } else if (t.pnlPct >= 1.3) {
+        tag = '<span class="tag tag-tp">止盈</span>';
+      }
+      const fmt = (ts) => new Date(ts * 1000).toLocaleTimeString('zh-CN', { hour12: false, timeZone: 'America/New_York' });
+      html += `<tr>
+        <td><strong>${t.symbol}</strong></td>
+        <td>${fmt(t.entryTime)}</td>
+        <td>${fmt(t.exitTime)}</td>
+        <td>${t.qty.toFixed(4)}</td>
+        <td>$${t.entryPrice.toFixed(2)}</td>
+        <td>$${t.exitPrice.toFixed(2)}</td>
+        <td class="${pnlClass}">${t.pnl >= 0 ? '+' : ''}$${t.pnl.toFixed(2)}</td>
+        <td class="${pnlClass}">${t.pnlPct >= 0 ? '+' : ''}${t.pnlPct.toFixed(2)}%</td>
+        <td>${tag}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+  }
+
+  // 止损分析
+  if (data.summary.stopLossCount > 0) {
+    html += `<h2>🛑 止损交易分析</h2>`;
+    html += `<div class="hint">
+      止损后 30 分钟内的最高价反弹 ≥ 0.5% 定义为“被扫”（whipsaw）。<br>
+      <strong>被扫比例 ${data.summary.stoppedWhipsawRate.toFixed(1)}%</strong>：
+      ${data.summary.stoppedWhipsawRate > 40 ? '超过 40%，建议放宽止损到 2% 或改用 ATR 动态止损。' :
+        data.summary.stoppedWhipsawRate < 20 ? '低于 20%，1.5% 止损合理，无需调整。' :
+        '介于 20%–40%，暂时保持 1.5%，继续观察。'}
+    </div>`;
+  }
+
+  area.innerHTML = html;
+}
+
+function exportCSV() {
+  if (!reportData) { alert('请先生成报告'); return; }
+  const s = reportData.summary;
+  let csv = `日期,${reportData.date}\n`;
+  csv += `总交易笔数,${s.totalTrades}\n`;
+  csv += `总盈亏,${s.totalPnl.toFixed(2)}\n`;
+  csv += `胜率(%),${s.winRate.toFixed(2)}\n`;
+  csv += `盈亏比,${s.profitFactor.toFixed(2)}\n`;
+  csv += `平均盈利,${s.avgWin.toFixed(2)}\n`;
+  csv += `平均亏损,${s.avgLoss.toFixed(2)}\n`;
+  csv += `止损触发数,${s.stopLossCount}\n`;
+  csv += `止损后被扫数,${s.stoppedWhipsawCount}\n`;
+  csv += `止损后被扫比例(%),${s.stoppedWhipsawRate.toFixed(2)}\n\n`;
+
+  csv += `股票,入场时间,出场时间,股数,入场价,出场价,盈亏,盈亏%,是否止损,止损后最高价,止损后反弹%\n`;
+  reportData.trades.forEach(t => {
+    const isStop = t.pnlPct <= STOP_LOSS_THRESHOLD ? '是' : '否';
+    const postHigh = t.postStopHigh ? t.postStopHigh.toFixed(2) : '';
+    const postRebound = t.postStopReboundPct !== undefined ? t.postStopReboundPct.toFixed(2) : '';
+    csv += `${t.symbol},${t.entryTimeStr},${t.exitTimeStr},${t.qty.toFixed(4)},${t.entryPrice.toFixed(2)},${t.exitPrice.toFixed(2)},${t.pnl.toFixed(2)},${t.pnlPct.toFixed(2)},${isStop},${postHigh},${postRebound}\n`;
+  });
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `trade-report-${reportData.date}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
