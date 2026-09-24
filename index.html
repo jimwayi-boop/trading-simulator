@@ -47,8 +47,6 @@
   .auto-row input { width: auto; }
   .auto-row label { margin: 0; font-size: 13px; color: #c9d1d9; }
   .auto-info { font-size: 11px; color: #8b949e; margin-top: 3px; }
-
-  /* 实时价格：每行 5 只，格子更小 */
   .price-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; margin-top: 6px; }
   .price-card { background: #0d1117; border: 1px solid #21262d; border-radius: 4px; padding: 4px 4px; text-align: center; }
   .price-symbol { font-size: 11px; font-weight: 700; color: #58a6ff; }
@@ -99,12 +97,12 @@
 
     <div class="row">
       <div><label>止损 (%)</label><input type="number" id="stopLoss" value="1.5" step="0.1"></div>
-      <div><label>止盈 (%)</label><input type="number" id="takeProfit" value="2.0" step="0.1"></div>
+      <div><label>止盈 (%)</label><input type="number" id="takeProfit" value="2.5" step="0.1"></div>
       <div><label>动量阈值 (%)</label><input type="number" id="momentumThreshold" value="0.35" step="0.05"></div>
     </div>
 
     <div class="row">
-      <div><label>加仓触发 (%)</label><input type="number" id="addTrigger" value="2" step="0.5"></div>
+      <div><label>加仓触发 (%)</label><input type="number" id="addTrigger" value="1.5" step="0.5"></div>
       <div><label>加仓比例 (%)</label><input type="number" id="addSize" value="3" step="0.5"></div>
       <div><label>ATR 阈值 (%)</label><input type="number" id="atrThreshold" value="1.5" step="0.1"></div>
     </div>
@@ -137,6 +135,7 @@
     <div class="hint">APITube → Marketaux → Kiprio 三层降级</div>
     <div class="hint">新闻：高波动10分钟 / 其他12分钟</div>
     <div class="hint">滑点：NVDA/META 0.05%，其他 0.1%</div>
+    <div class="hint">分级止损：-1.5% → 保本 → +1.5% → 跟踪2%</div>
   </div>
 
   <div class="panel">
@@ -177,8 +176,6 @@
 // 配置
 // ═══════════════════════════════════════════════
 const WORKER_URL = "https://trading-proxy.jimwayi.workers.dev";
-const NTFY_TOPIC = "Stocktrade-alert-2026";
-const NTFY_URL = `https://ntfy.sh/${NTFY_TOPIC}`;
 
 const APITUBE_ENTITY_ID_MAP = {
   'AAPL': '1302944',
@@ -200,6 +197,11 @@ const MAX_DAILY_TRADES_PER_SYMBOL = 3;
 const COMPOSITE_HIGH_THRESHOLD = 0.8;
 const PRICE_REFRESH_INTERVAL = 30 * 1000;
 const INITIAL_CAPITAL = 100000;
+
+// 分级止损阶段（基于相对于加权平均成本的浮盈 %）
+const TRAILING_STOP_PCT = 0.02;      // 跟踪止损：从高点回撤 2%
+const STAGE_BREAKEVEN_PCT = 1.0;     // 盈利 1% → 保本
+const STAGE_LOCK_PCT = 2.0;          // 盈利 2% → 止损上移到 +1.5%
 
 // ═══════════════════════════════════════════════
 // 全局状态
@@ -304,6 +306,30 @@ function updatePnlDisplay(account) {
   const totalReturnEl = document.getElementById('statTotalReturn');
   totalReturnEl.textContent = (totalReturnPct >= 0 ? '+' : '') + totalReturnPct.toFixed(2) + '%';
   totalReturnEl.className = 'stat-value ' + (totalReturnPct > 0 ? 'profit' : totalReturnPct < 0 ? 'loss' : '');
+}
+
+// ═══════════════════════════════════════════════
+// 分级止损计算
+// ═══════════════════════════════════════════════
+/**
+ * 根据当前浮盈阶段返回有效止损价
+ * 阶段 1：pnl < 1%     → 成本 × (1 - stopLoss%)    例如 -1.5%
+ * 阶段 2：1% ≤ pnl < 2% → 成本价（保本）
+ * 阶段 3：pnl ≥ 2%     → max(成本 × 1.015, 高点 × 0.98)
+ */
+function getEffectiveStopPrice(entryPrice, currentPrice, highPrice, stopLossPct, pnlPct) {
+  const costStop = entryPrice * (1 - stopLossPct / 100);
+  const breakeven = entryPrice;
+  const lockProfit = entryPrice * 1.015;
+  const trailing = highPrice * (1 - TRAILING_STOP_PCT);
+
+  if (pnlPct < STAGE_BREAKEVEN_PCT) {
+    return { price: costStop, stage: '成本止损' };
+  } else if (pnlPct < STAGE_LOCK_PCT) {
+    return { price: breakeven, stage: '保本' };
+  } else {
+    return { price: Math.max(lockProfit, trailing), stage: '锁定+跟踪' };
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -420,23 +446,6 @@ function checkAutoStartStop() {
     infoEl.textContent = `运行中：约 ${remain} 分钟后自动停止（美东 ${stopStr}）`;
   } else if (autoStoppedToday) {
     infoEl.textContent = `今日已自动停止，等待明天 ${startStr}（美东）`;
-  }
-}
-
-// ═══════════════════════════════════════════════
-// ntfy 通知
-// ═══════════════════════════════════════════════
-async function sendNotification(title, message, priority = '3', tags = '') {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
-  try {
-    const headers = { 'Title': title, 'Priority': priority };
-    if (tags) headers['Tags'] = tags;
-    await fetch(NTFY_URL, { method: 'POST', headers, body: message, signal: controller.signal });
-  } catch (e) {
-    console.error('ntfy 通知失败:', e);
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 
@@ -704,7 +713,6 @@ async function runOneCycle() {
       log(`获取账户失败: ${e.message}`, 'sell');
       document.getElementById('accountBadge').textContent = '连接失败';
       document.getElementById('accountBadge').className = 'badge badge-error';
-      await sendNotification('⚠️ 系统错误', `获取账户失败: ${e.message}`, '4', 'warning');
       return;
     }
 
@@ -712,7 +720,6 @@ async function runOneCycle() {
     if (newsStale && (Date.now() - lastStaleWarningTime > NEWS_STALE_LIMIT)) {
       lastStaleWarningTime = Date.now();
       log('⚠️ 新闻数据超过30分钟未更新，暂停开新仓', 'warn');
-      await sendNotification('⚠️ 新闻数据失效', '超过30分钟未成功更新，暂停开新仓', '4', 'warning');
     }
 
     let positions;
@@ -740,33 +747,35 @@ async function runOneCycle() {
         positionHighPrice[sym] = currentPrice;
       }
       const highPrice = positionHighPrice[sym];
-      const trailingStop = highPrice * 0.98;
-      const costStop = entryPrice * (1 - stopLossPct / 100);
-      const effectiveStop = Math.max(trailingStop, costStop);
+
+      // 分级止损
+      const stopInfo = getEffectiveStopPrice(entryPrice, currentPrice, highPrice, stopLossPct, pnlPct);
+      const effectiveStop = stopInfo.price;
       const effectiveStopPct = ((effectiveStop - entryPrice) / entryPrice) * 100;
 
+      // 止盈
       if (pnlPct >= takeProfitPct) {
         log(`${sym} 止盈 (+${pnlPct.toFixed(2)}%)`, 'buy');
         try {
           await closePosition(sym);
           cleanupPositionState(sym, true);
           log(`${sym} 平仓成功 (止盈) | 今日第${dailyTradeCount[sym]}次`, 'buy');
-          await sendNotification('💰 止盈平仓', `${sym} 盈利 ${pnlPct.toFixed(2)}%`, '4', 'money_bag');
         } catch (e) { log(`${sym} 平仓失败: ${e.message}`, 'sell'); }
         continue;
       }
 
+      // 止损
       if (currentPrice <= effectiveStop) {
-        log(`${sym} 止损 现价$${currentPrice.toFixed(2)} ≤ $${effectiveStop.toFixed(2)} (${effectiveStopPct.toFixed(2)}%)`, 'sell');
+        log(`${sym} 止损 [${stopInfo.stage}] 现价$${currentPrice.toFixed(2)} ≤ 止损线$${effectiveStop.toFixed(2)} (${effectiveStopPct.toFixed(2)}%)`, 'sell');
         try {
           await closePosition(sym);
           cleanupPositionState(sym, true);
           log(`${sym} 平仓成功 (止损) | 今日第${dailyTradeCount[sym]}次`, 'sell');
-          await sendNotification('🛑 止损平仓', `${sym} 亏损 ${pnlPct.toFixed(2)}%`, '5', 'warning');
         } catch (e) { log(`${sym} 平仓失败: ${e.message}`, 'sell'); }
         continue;
       }
 
+      // 反向信号
       const cachedNews = newsCache[sym] || { bullish: false, score: 0, source: 'none' };
       if (!cachedNews.bullish && cachedNews.score < 0.15 && pnlPct < 0.5) {
         log(`${sym} 反向信号平仓 (新闻来源: ${cachedNews.source})`, 'sell');
@@ -774,11 +783,11 @@ async function runOneCycle() {
           await closePosition(sym);
           cleanupPositionState(sym, true);
           log(`${sym} 平仓成功 (反向信号) | 今日第${dailyTradeCount[sym]}次`, 'sell');
-          await sendNotification('🔄 反向信号平仓', `${sym} 盈亏 ${pnlPct.toFixed(2)}%`, '3', 'arrows_counterclockwise');
         } catch (e) { log(`${sym} 平仓失败: ${e.message}`, 'sell'); }
         continue;
       }
 
+      // 加仓（最多1次）
       const posAdded = positionHighPrice[sym + '_added'];
       if (!posAdded && pnlPct >= addTriggerPct && dailyTradeCount[sym] < MAX_DAILY_TRADES_PER_SYMBOL) {
         const currentExposurePct = (marketValue / totalEquity) * 100;
@@ -794,8 +803,8 @@ async function runOneCycle() {
             const result = await submitSplitOrder(sym, addQty, 'buy');
             if (result.success) {
               positionHighPrice[sym + '_added'] = true;
+              // 加仓后最高价重置为加仓成交价
               positionHighPrice[sym] = currentPrice;
-              await sendNotification('📈 加仓执行', `${sym} 加仓 $${addValue.toFixed(2)}`, '4', 'chart_increasing');
             }
           } else {
             log(`${sym} 加仓后市值将达${newExposurePct.toFixed(1)}% > ${maxExposurePct}%，跳过`, 'warn');
@@ -914,15 +923,9 @@ async function runOneCycle() {
         positionHighPrice[c.sym] = c.price;
         runningExposure += positionValue;
         opened++;
-        await sendNotification(
-          '🚀 买入信号',
-          `${c.sym} 买入 ${qty.toFixed(4)}股 @ $${effectivePrice.toFixed(2)}\n` +
-          `综合分${c.composite.toFixed(3)}（情绪${c.newsScore.toFixed(2)}, 动量${c.momentumPct.toFixed(2)}%）\n` +
-          `仓位 $${positionValue.toFixed(2)}（${baseSizePct}%）`,
-          '4', 'rocket'
-        );
+        log(`买入 ${c.sym} 完成 | 仓位 $${positionValue.toFixed(2)}（${baseSizePct}%）`, 'buy');
       } else {
-        await sendNotification('⚠️ 买入失败', `${c.sym} 下单失败`, '4', 'warning');
+        log(`买入 ${c.sym} 失败`, 'sell');
       }
     }
 
@@ -984,7 +987,7 @@ function startLoop() {
   document.getElementById('btnStop').style.display = 'block';
 
   log(`实时交易已启动 | 交易检查${intervalMin}分钟 | 新闻动态10/12分钟`, 'buy');
-  sendNotification('▶️ 策略已启动', `实时交易启动，检查间隔${intervalMin}分钟`, '3', 'arrow_forward');
+  log(`止损模式: 分级止损 | 止盈: ${document.getElementById('takeProfit').value}% | 加仓触发: ${document.getElementById('addTrigger').value}%`, 'info');
 
   runOneCycle().catch(e => { console.error(e); log(`循环错误: ${e.message}`, 'sell'); });
 
@@ -1015,7 +1018,6 @@ function stopLoop() {
   document.getElementById('btnStop').style.display = 'none';
   document.getElementById('timerDisplay').textContent = '--:--';
   log('实时交易已停止', 'warn');
-  sendNotification('⏹️ 策略已停止', '实时交易已手动停止', '3', 'stop_sign');
 }
 
 // ═══════════════════════════════════════════════
@@ -1038,10 +1040,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   log('面板就绪。自动启停已开启，默认美东 9:29 启动 / 16:02 停止。', 'info');
   log('注意：请确保 Alpaca 账户是 Paper Trading 模式。', 'warn');
-  log(`手机通知已配置 | 主题: ${NTFY_TOPIC}`, 'info');
   log(`新闻源: APITube → Marketaux → Kiprio`, 'info');
   log(`多持仓模式：最多5只，单只≤10%，总≤75%`, 'info');
   log(`实时价格面板：每30秒刷新`, 'info');
+  log(`分级止损: -1.5% → 保本 → +1.5% → 跟踪2%`, 'info');
+  log(`止盈 2.5% | 加仓触发 1.5% | 加仓 3%（评分≥0.8 加4%）`, 'info');
   log(`初始资金: $${INITIAL_CAPITAL.toLocaleString()}（用于计算总回报率）`, 'info');
 });
 </script>
