@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>止损回测工具</title>
+<title>股票自动交易策略A-止损回测工具</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0d1117; color: #c9d1d9; padding: 16px; font-size: 14px; }
@@ -59,7 +59,7 @@
 <body>
 
 <div class="container">
-  <h1>📉 止损回测工具</h1>
+  <h1>📉 股票自动交易策略A-止损回测工具</h1>
   <div class="desc">
     用历史 5 分钟 K 线模拟策略入场，对每个止损百分比分别回测。输出止损触发次数、止损后 30 分钟内反弹比例（假止损）、净盈亏。<br>
     <strong>注意</strong>：此回测<strong>跳过新闻条件</strong>（新闻无法精确回测），只使用动量 + ATR + K线振幅 + 趋势确认。因此结果只反映<strong>止损行为</strong>，不代表策略的整体表现。
