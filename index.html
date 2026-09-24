@@ -245,29 +245,22 @@ const PRICE_REFRESH_INTERVAL = 30 * 1000;
 const PNL_REFRESH_INTERVAL = 5 * 60 * 1000;
 const INITIAL_CAPITAL = 100000;
 
-// ═══════════════════════════════════════════════
 // ATR 动态止损 + 市场过滤参数
-// ═══════════════════════════════════════════════
-// 牛市（SPY > 20MA）：宽止损，乘数大，范围 [1.5%, 3.0%]
 const BULL_ATR_MULTIPLIER = 1.5;
 const BULL_MIN_STOP = 1.5;
 const BULL_MAX_STOP = 3.0;
 
-// 熊市（SPY < 20MA）：紧止损，乘数小，范围 [0.8%, 1.5%]
 const BEAR_ATR_MULTIPLIER = 1.0;
 const BEAR_MIN_STOP = 0.8;
 const BEAR_MAX_STOP = 1.5;
 
-// SPY 20 日均线窗口
 const MA_WINDOW = 20;
 
-// 分级止损（相对加权平均成本的浮盈 %）
 const STAGE_BREAKEVEN_PCT = 0.3;
 const STAGE_LOCK_05_PCT = 0.8;
 const STAGE_LOCK_1_PCT = 1.5;
 const TRAILING_STOP_PCT = 0.006;
 
-// 时间止损 / 新闻退出
 const TIME_STOP_MAX_PNL = 0;
 const NEWS_EXIT_MAX_PNL = 1.0;
 
@@ -295,7 +288,6 @@ let positionHighPrice = {};
 let positionEntryTime = {};
 let positionPartialTP = {};
 
-// 持仓时记录该股票入场时的 ATR% 和根据市场状态计算出的止损%
 let positionAtrPct = {};
 let positionStopLossPct = {};
 
@@ -304,7 +296,6 @@ let autoStoppedToday = false;
 
 let symbolRealizedPnl = {};
 
-// 市场状态（SPY vs 20MA）
 let marketState = {
   isBull: true,
   spyPrice: null,
@@ -399,7 +390,7 @@ function updatePnlDisplay(account) {
 }
 
 // ═══════════════════════════════════════════════
-// 市场状态更新（SPY 20MA）
+// 市场状态更新
 // ═══════════════════════════════════════════════
 async function updateMarketState() {
   try {
@@ -410,7 +401,7 @@ async function updateMarketState() {
       return;
     }
     const data = await resp.json();
-    const bars = (data.bars || []).reverse();  // 从旧到新
+    const bars = (data.bars || []).reverse();
     if (bars.length < MA_WINDOW) {
       log(`SPY 数据不足 ${MA_WINDOW} 根，无法计算均线`, 'warn');
       return;
@@ -420,6 +411,7 @@ async function updateMarketState() {
     const ma20 = recent20.reduce((s, b) => s + b.c, 0) / MA_WINDOW;
     const currentPrice = bars[bars.length - 1].c;
 
+    const wasLoaded = marketState.loaded;
     const wasBull = marketState.isBull;
     marketState = {
       isBull: currentPrice > ma20,
@@ -431,7 +423,7 @@ async function updateMarketState() {
 
     updateMarketStateUI();
 
-    if (!marketState.loaded || wasBull !== marketState.isBull) {
+    if (!wasLoaded || wasBull !== marketState.isBull) {
       log(`市场状态变化: SPY $${currentPrice.toFixed(2)} vs 20MA $${ma20.toFixed(2)} → ${marketState.isBull ? '🐂 牛市（宽止损）' : '🐻 熊市（紧止损）'}`, marketState.isBull ? 'buy' : 'sell');
     } else {
       log(`市场状态更新: ${marketState.isBull ? '🐂 牛市' : '🐻 熊市'} (SPY $${currentPrice.toFixed(2)})`, 'info');
@@ -470,11 +462,10 @@ function updateMarketStateUI() {
 }
 
 // ═══════════════════════════════════════════════
-// ATR 动态止损计算
+// ATR 动态止损
 // ═══════════════════════════════════════════════
 function calculateDynamicStopLoss(atrPct) {
   if (!marketState.loaded) {
-    // 市场状态未加载时，用保守值
     return 1.5;
   }
   const multiplier = marketState.isBull ? BULL_ATR_MULTIPLIER : BEAR_ATR_MULTIPLIER;
@@ -484,9 +475,6 @@ function calculateDynamicStopLoss(atrPct) {
   return Math.max(minStop, Math.min(maxStop, raw));
 }
 
-// ═══════════════════════════════════════════════
-// 分级止损（用动态 stopLossPct）
-// ═══════════════════════════════════════════════
 function getEffectiveStopPrice(entryPrice, currentPrice, highPrice, stopLossPct, pnlPct) {
   if (pnlPct < STAGE_BREAKEVEN_PCT) {
     return { price: entryPrice * (1 - stopLossPct / 100), stage: `成本止损(${stopLossPct.toFixed(2)}%)` };
@@ -939,7 +927,6 @@ async function runOneCycle() {
       log(`新交易日 ${today}，重置交易计数`, 'info');
     }
 
-    // 市场状态更新
     const marketUpdateInterval = parseInt(document.getElementById('marketUpdateMin').value) * 60 * 1000;
     if ((Date.now() - marketState.lastUpdate) >= marketUpdateInterval) {
       updateMarketState();
@@ -965,7 +952,9 @@ async function runOneCycle() {
       updateNewsCacheAsync(symbols);
     }
 
-    log(`── 检查周期 (${symbols.length}只) [${marketState.isBull ? '牛' : '熊'}] ──`, 'info');
+    // ✅ 显示动物 + 中文
+    const marketLabel = marketState.isBull ? '🐂 牛市' : '🐻 熊市';
+    log(`── 检查周期 (${symbols.length}只) ${marketLabel} ──`, 'info');
 
     let account;
     try {
@@ -1000,7 +989,6 @@ async function runOneCycle() {
     const totalEquity = parseFloat(account.equity);
     const currentMin = getEasternMinutes();
 
-    // 收盘强平
     if (currentMin >= forceCloseMinutes && positions.length > 0) {
       log(`⏰ 收盘强平（美东 15:55+），平掉所有持仓`, 'warn');
       for (const pos of positions) {
@@ -1033,19 +1021,13 @@ async function runOneCycle() {
       }
       const highPrice = positionHighPrice[sym];
 
-      // 计算该持仓的动态止损%
-      // 若入场时未记录（例如重启后），用当前 ATR 近似
       let atrPct = positionAtrPct[sym];
-      if (atrPct === undefined || atrPct === null) {
-        // 重新估计：用最近 K 线计算 ATR%
-        atrPct = 1.5;  // 保守默认
-      }
+      if (atrPct === undefined || atrPct === null) atrPct = 1.5;
       const dynamicStopLossPct = calculateDynamicStopLoss(atrPct);
       positionStopLossPct[sym] = dynamicStopLossPct;
 
       log(`持仓 ${sym}: ${qty.toFixed(4)}股 | 均价$${entryPrice.toFixed(2)} → $${currentPrice.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%) | 动态止损 ${dynamicStopLossPct.toFixed(2)}%${positionPartialTP[sym] ? ' [已部分止盈]' : ''}`, 'info');
 
-      // 部分止盈
       if (!positionPartialTP[sym] && pnlPct >= partialTPTriggerPct) {
         const halfQty = qty / 2;
         log(`${sym} 部分止盈触发 (+${pnlPct.toFixed(2)}%) → 卖出 50% (${halfQty.toFixed(4)}股)，剩余切换到跟踪止盈`, 'buy');
@@ -1058,7 +1040,6 @@ async function runOneCycle() {
         }
       }
 
-      // 跟踪止盈（部分止盈后）
       if (positionPartialTP[sym]) {
         const trailPrice = highPrice * (1 - trailingTPRetreatPct / 100);
         if (currentPrice <= trailPrice) {
@@ -1072,7 +1053,6 @@ async function runOneCycle() {
         }
       }
 
-      // 分级止损（未部分止盈时，用动态 stopLossPct）
       if (!positionPartialTP[sym]) {
         const stopInfo = getEffectiveStopPrice(entryPrice, currentPrice, highPrice, dynamicStopLossPct, pnlPct);
         const effectiveStop = stopInfo.price;
@@ -1089,7 +1069,6 @@ async function runOneCycle() {
         }
       }
 
-      // 时间止损（仅浮亏）
       const holdMin = (Date.now() - positionEntryTime[sym]) / 60000;
       if (holdMin >= timeStopMinutes && pnlPct < TIME_STOP_MAX_PNL) {
         log(`${sym} 时间止损（持仓 ${holdMin.toFixed(0)} 分钟，浮盈 ${pnlPct.toFixed(2)}% < 0%）`, 'sell');
@@ -1101,7 +1080,6 @@ async function runOneCycle() {
         continue;
       }
 
-      // 新闻退出
       const cachedNews = newsCache[sym] || { bullish: false, score: 0, source: 'none' };
       if (!cachedNews.bullish && cachedNews.score < 0.15 && pnlPct < NEWS_EXIT_MAX_PNL) {
         log(`${sym} 反向信号平仓 (新闻来源: ${cachedNews.source}, 浮盈 ${pnlPct.toFixed(2)}%)`, 'sell');
@@ -1113,7 +1091,6 @@ async function runOneCycle() {
         continue;
       }
 
-      // 加仓
       const posAdded = positionHighPrice[sym + '_added'];
       if (!posAdded && pnlPct >= addTriggerPct && dailyTradeCount[sym] < MAX_DAILY_TRADES_PER_SYMBOL) {
         const currentExposurePct = (marketValue / totalEquity) * 100;
@@ -1322,8 +1299,8 @@ function startLoop() {
   document.getElementById('btnStop').style.display = 'block';
 
   log(`实时交易已启动 | 检查${intervalMin}分钟 | 新闻10/12分钟`, 'buy');
-  log(`止损: ATR × 乘数 (牛市 ${BULL_ATR_MULTIPLIER}×, 熊市 ${BEAR_ATR_MULTIPLIER}×)`, 'info');
-  log(`范围: 牛市 [${BULL_MIN_STOP}%, ${BULL_MAX_STOP}%], 熊市 [${BEAR_MIN_STOP}%, ${BEAR_MAX_STOP}%]`, 'info');
+  log(`止损: ATR × 乘数 (🐂 牛市 ${BULL_ATR_MULTIPLIER}×, 🐻 熊市 ${BEAR_ATR_MULTIPLIER}×)`, 'info');
+  log(`范围: 🐂 牛市 [${BULL_MIN_STOP}%, ${BULL_MAX_STOP}%], 🐻 熊市 [${BEAR_MIN_STOP}%, ${BEAR_MAX_STOP}%]`, 'info');
   log(`止盈: ${document.getElementById('partialTPTrigger').value}% 卖50% → 剩余跟踪回撤${document.getElementById('trailingTPRetreat').value}%`, 'info');
   log(`时间止损: ${document.getElementById('timeStopMinutes').value}分钟仅浮亏时启用`, 'info');
   log(`收盘强平: 美东 15:55`, 'info');
@@ -1372,7 +1349,6 @@ document.addEventListener('DOMContentLoaded', () => {
   autoCheckInterval = setInterval(checkAutoStartStop, 30 * 1000);
   checkAutoStartStop();
 
-  // 启动时先加载市场状态
   updateMarketState();
 
   calculateSymbolRealizedPnl();
@@ -1388,8 +1364,8 @@ document.addEventListener('DOMContentLoaded', () => {
   log(`新闻源: APITube → Marketaux → Kiprio`, 'info');
   log(`多持仓模式：最多5只，单只≤10%，总≤75%`, 'info');
   log(`动态止损: ATR × 乘数 × 市场状态`, 'info');
-  log(`牛市(SPY>20MA): ${BULL_ATR_MULTIPLIER}× ATR，范围[${BULL_MIN_STOP}%, ${BULL_MAX_STOP}%]`, 'info');
-  log(`熊市(SPY<20MA): ${BEAR_ATR_MULTIPLIER}× ATR，范围[${BEAR_MIN_STOP}%, ${BEAR_MAX_STOP}%]`, 'info');
+  log(`🐂 牛市(SPY>20MA): ${BULL_ATR_MULTIPLIER}× ATR，范围[${BULL_MIN_STOP}%, ${BULL_MAX_STOP}%]`, 'info');
+  log(`🐻 熊市(SPY<20MA): ${BEAR_ATR_MULTIPLIER}× ATR，范围[${BEAR_MIN_STOP}%, ${BEAR_MAX_STOP}%]`, 'info');
 });
 </script>
 </body>
