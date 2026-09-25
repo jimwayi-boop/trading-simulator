@@ -301,9 +301,8 @@ const BEAR_ATR_MULTIPLIER = 1.0;
 const BEAR_MIN_STOP = 0.8;
 const BEAR_MAX_STOP = 1.5;
 
-// 5 分钟线用于市场判断：每天约 78 根
-const BARS_PER_DAY_5MIN = 78;
-const MIN_BARS_FOR_MARKET = 160;   // 至少 2 天
+// ✅ 放宽：只需 30 根 5 分钟线就能判断趋势
+const MIN_BARS_FOR_MARKET = 30;
 
 const STAGE_BREAKEVEN_PCT = 0.3;
 const STAGE_LOCK_05_PCT = 0.8;
@@ -351,7 +350,7 @@ let autoStoppedToday = false;
 let symbolRealizedPnl = {};
 
 let marketState = {
-  isBull: true,
+  isBull: false,
   spyPrice: null,
   spyMa20: null,
   lastUpdate: 0,
@@ -513,28 +512,36 @@ function updatePnlDisplay(account) {
 }
 
 // ═══════════════════════════════════════════════
-// 市场状态（三层降级：SPY 5min → 5 股 5min 投票 → 默认）
+// 市场状态（三层降级 + 宽松数据量判断）
 // ═══════════════════════════════════════════════
 
 /**
- * 用 5 分钟线判断趋势：最近 1 天均价 vs 前 1 天均价
+ * 用 5 分钟线判断趋势：前一半 vs 后一半
+ * 只要 ≥30 根就能判断
  */
 async function tryIndex5Min(symbol) {
   try {
     const url = `${WORKER_URL}/alpaca-data/v2/stocks/${symbol}/bars?timeframe=5Min&limit=400&feed=iex&sort=desc`;
     const resp = await fetch(url);
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      console.log(`[市场] ${symbol} HTTP ${resp.status}`);
+      return null;
+    }
     const data = await resp.json();
     const bars = (data.bars || []).reverse();
-    if (bars.length < MIN_BARS_FOR_MARKET) return null;
+    console.log(`[市场] ${symbol} 拿到 ${bars.length} 根 5 分钟线`);
 
-    const recentDay = bars.slice(-BARS_PER_DAY_5MIN);
-    const prevDay = bars.slice(-BARS_PER_DAY_5MIN * 2, -BARS_PER_DAY_5MIN);
+    if (bars.length < MIN_BARS_FOR_MARKET) {
+      console.log(`[市场] ${symbol} 根数不足 ${MIN_BARS_FOR_MARKET}`);
+      return null;
+    }
 
-    if (prevDay.length === 0) return null;
+    const mid = Math.floor(bars.length / 2);
+    const recentHalf = bars.slice(mid);
+    const prevHalf = bars.slice(0, mid);
 
-    const recentAvg = recentDay.reduce((s, b) => s + b.c, 0) / recentDay.length;
-    const prevAvg = prevDay.reduce((s, b) => s + b.c, 0) / prevDay.length;
+    const recentAvg = recentHalf.reduce((s, b) => s + b.c, 0) / recentHalf.length;
+    const prevAvg = prevHalf.reduce((s, b) => s + b.c, 0) / prevHalf.length;
 
     return {
       isBull: recentAvg > prevAvg,
@@ -543,13 +550,13 @@ async function tryIndex5Min(symbol) {
       source: 'index_5min'
     };
   } catch (e) {
-    console.warn(`${symbol} 5分钟获取失败:`, e);
+    console.warn(`[市场] ${symbol} 异常:`, e);
     return null;
   }
 }
 
 /**
- * 5 股 5 分钟投票：至少 3 只最近 1 天 > 前 1 天
+ * 5 股 5 分钟投票
  */
 async function tryStockVote5Min() {
   try {
@@ -568,20 +575,22 @@ async function tryStockVote5Min() {
         const bars = (data.bars || []).reverse();
         if (bars.length < MIN_BARS_FOR_MARKET) continue;
 
-        const recentDay = bars.slice(-BARS_PER_DAY_5MIN);
-        const prevDay = bars.slice(-BARS_PER_DAY_5MIN * 2, -BARS_PER_DAY_5MIN);
+        const mid = Math.floor(bars.length / 2);
+        const recentHalf = bars.slice(mid);
+        const prevHalf = bars.slice(0, mid);
 
-        const recentAvg = recentDay.reduce((s, b) => s + b.c, 0) / recentDay.length;
-        const prevAvg = prevDay.reduce((s, b) => s + b.c, 0) / prevDay.length;
+        const recentAvg = recentHalf.reduce((s, b) => s + b.c, 0) / recentHalf.length;
+        const prevAvg = prevHalf.reduce((s, b) => s + b.c, 0) / prevHalf.length;
 
         validCount++;
         if (recentAvg > prevAvg) bullCount++;
       } catch (e) {
-        console.warn(`5股投票 ${sym} 失败:`, e);
+        console.warn(`[市场投票] ${sym} 异常:`, e);
       }
       await new Promise(r => setTimeout(r, 200));
     }
 
+    console.log(`[市场投票] ${bullCount}/${validCount} 只看涨`);
     if (validCount < 3) return null;
 
     return {
@@ -591,7 +600,7 @@ async function tryStockVote5Min() {
       source: 'stock_vote_5min'
     };
   } catch (e) {
-    console.warn('5股投票失败:', e);
+    console.warn('[市场投票] 异常:', e);
     return null;
   }
 }
@@ -635,7 +644,6 @@ async function updateMarketState() {
       log(`市场状态: ${result.isBull ? '🐂 牛市' : '🐻 熊市'} [${sourceLabel}]`, 'info');
     }
   } else {
-    // 默认保守：熊市止损
     marketState = {
       isBull: false,
       spyPrice: null,
