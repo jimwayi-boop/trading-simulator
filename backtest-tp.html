@@ -6,7 +6,7 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0d1117; color: #c9d1d9; padding: 16px; font-size: 14px; }
-  .container { max-width: 1400px; margin: 0 auto; }
+  .container { max-width: 1600px; margin: 0 auto; }
   h1 { font-size: 20px; margin-bottom: 8px; }
   h2 { font-size: 14px; margin: 20px 0 8px 0; color: #58a6ff; text-transform: uppercase; letter-spacing: .5px; }
   .desc { font-size: 12px; color: #8b949e; margin-bottom: 12px; line-height: 1.6; }
@@ -43,12 +43,19 @@
   .warn { color: #d29922; }
   .blue { color: #58a6ff; }
 
-  .plan-card { padding: 12px 14px; border-radius: 8px; margin-top: 12px; line-height: 1.7; font-size: 13px; }
+  .plan-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .plan-card { padding: 12px 14px; border-radius: 8px; line-height: 1.7; font-size: 13px; }
   .plan-a { background: #1f6feb11; border: 1px solid #1f6feb44; }
   .plan-b { background: #23863611; border: 1px solid #23863644; }
   .plan-c { background: #d2992211; border: 1px solid #d2992244; }
+  .plan-d { background: #a371f711; border: 1px solid #a371f744; }
 
   .plan-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+
+  .rec-box { padding: 14px; border-radius: 8px; margin-top: 16px; font-size: 14px; line-height: 1.7; }
+  .rec-green { background: #23863622; border: 1px solid #23863644; color: #3fb950; }
+  .rec-yellow { background: #d2992222; border: 1px solid #d2992244; color: #d29922; }
+  .rec-blue { background: #a371f722; border: 1px solid #a371f744; color: #a371f7; }
 </style>
 </head>
 <body>
@@ -56,7 +63,7 @@
 <div class="container">
   <h1>📈 股票自动交易策略A-止盈回测工具</h1>
   <div class="desc">
-    用历史 5 分钟 K 线模拟策略入场，对比三种止盈方案的历史表现。<br>
+    用历史 5 分钟 K 线模拟策略入场，对比四种止盈方案的历史表现。<br>
     <strong>注意</strong>：此回测<strong>跳过新闻条件</strong>，只使用动量 + ATR + K线振幅 + 趋势确认。入场信号和止损规则完全一致，<strong>只对比止盈机制</strong>。
   </div>
 
@@ -84,6 +91,7 @@
     <button class="preset-btn" data-days="60">最近 60 天</button>
     <button class="preset-btn" data-days="90">最近 90 天</button>
     <button class="preset-btn" data-days="180">最近 180 天</button>
+    <button class="preset-btn" data-days="365">最近 365 天</button>
   </div>
 
   <div class="progress" id="progress">
@@ -104,9 +112,9 @@ const TIMEFRAME = '5Min';
 const MOMENTUM_THRESHOLD_PCT = 0.35;
 const ATR_THRESHOLD_PCT = 1.5;
 const BAR_RANGE_MAX_PCT = 1.0;
-const FIXED_STOP_LOSS_PCT = 1.5;   // 简化：固定 1.5% 止损（不启用分级止损，专注对比止盈）
+const FIXED_STOP_LOSS_PCT = 1.5;
 
-// 三种止盈方案
+// 四种止盈方案
 const PLANS = {
   A: {
     name: '当前方案',
@@ -119,7 +127,7 @@ const PLANS = {
     trailingValue: 0.8
   },
   B: {
-    name: '推荐组合',
+    name: '推荐组合(原)',
     desc: '1.5% 卖 40% + 3.0% 卖 30% + 剩余 ATR×0.8 跟踪',
     partial1Trigger: 1.5,
     partial1Size: 0.4,
@@ -137,6 +145,18 @@ const PLANS = {
     partial2Size: 0,
     trailingMode: 'fixed',
     trailingValue: 1.2
+  },
+  D: {
+    name: '方案D(优化)',
+    desc: '1.5% 卖 50% + 剩余 ATR×1.0 跟踪 [0.8%~1.5%]',
+    partial1Trigger: 1.5,
+    partial1Size: 0.5,
+    partial2Trigger: null,
+    partial2Size: 0,
+    trailingMode: 'atr',
+    trailingValue: 1.0,
+    atrMin: 0.8,
+    atrMax: 1.5
   }
 };
 
@@ -181,20 +201,17 @@ async function runBacktest() {
   progress.style.display = 'block';
 
   try {
-    // 1. 拉取 K 线
     const allBars = {};
     for (let i = 0; i < symbols.length; i++) {
       const sym = symbols[i];
       progressText.textContent = `拉取 ${sym} 历史 K 线...`;
       progressFill.style.width = `${((i + 0.5) / symbols.length) * 30}%`;
-
       const bars = await fetchBars(sym, startDate, endDate);
       allBars[sym] = bars;
       console.log(`${sym}: ${bars.length} 根 K 线`);
       await new Promise(r => setTimeout(r, 300));
     }
 
-    // 2. 生成统一的入场信号（含 ATR%）
     progressText.textContent = '生成入场信号...';
     progressFill.style.width = '40%';
 
@@ -203,11 +220,12 @@ async function runBacktest() {
       entrySignals[sym] = findEntrySignals(allBars[sym]);
     }
 
-    // 3. 对三个方案分别模拟
+    const planKeys = Object.keys(PLANS);
     const results = {};
-    for (const key in PLANS) {
+    for (let i = 0; i < planKeys.length; i++) {
+      const key = planKeys[i];
       progressText.textContent = `模拟方案 ${key} (${PLANS[key].name})...`;
-      progressFill.style.width = `${40 + Object.keys(PLANS).indexOf(key) / 3 * 55}%`;
+      progressFill.style.width = `${40 + (i / planKeys.length) * 55}%`;
       results[key] = simulatePlan(allBars, entrySignals, PLANS[key]);
       await new Promise(r => setTimeout(r, 100));
     }
@@ -284,10 +302,22 @@ function findEntrySignals(bars) {
 }
 
 // ═══════════════════════════════════════════════
-// 核心模拟：单个方案
+// 计算跟踪回撤%
+// ═══════════════════════════════════════════════
+function calcTrailRetreatPct(plan, atrPct) {
+  if (plan.trailingMode === 'fixed') {
+    return plan.trailingValue;
+  }
+  // ATR 模式
+  const min = plan.atrMin !== undefined ? plan.atrMin : 0.5;
+  const max = plan.atrMax !== undefined ? plan.atrMax : 1.5;
+  return Math.max(min, Math.min(max, atrPct * plan.trailingValue));
+}
+
+// ═══════════════════════════════════════════════
+// 核心模拟
 // ═══════════════════════════════════════════════
 function simulatePlan(allBars, entrySignals, plan) {
-  // 收集所有信号，按时间排序
   const allSignals = [];
   for (const sym in entrySignals) {
     entrySignals[sym].forEach(s => allSignals.push({ sym, ...s }));
@@ -298,7 +328,7 @@ function simulatePlan(allBars, entrySignals, plan) {
   let position = null;
 
   for (const sig of allSignals) {
-    if (position) continue;   // 简化：每次只持 1 只
+    if (position) continue;
 
     const bars = allBars[sig.sym];
     if (!bars || sig.index >= bars.length) continue;
@@ -307,10 +337,9 @@ function simulatePlan(allBars, entrySignals, plan) {
     const entryTime = sig.time;
     const atrPct = sig.atrPct;
 
-    // 初始止损
     const stopPrice = entryPrice * (1 - FIXED_STOP_LOSS_PCT / 100);
+    const trailRetreatPct = calcTrailRetreatPct(plan, atrPct);
 
-    // 状态
     let remaining = 1.0;
     let realizedPnlPct = 0;
     let highPrice = entryPrice;
@@ -320,22 +349,13 @@ function simulatePlan(allBars, entrySignals, plan) {
     let exitReason = null;
     let exitPrice = 0;
 
-    // 计算跟踪回撤
-    let trailRetreatPct;
-    if (plan.trailingMode === 'fixed') {
-      trailRetreatPct = plan.trailingValue;
-    } else if (plan.trailingMode === 'atr') {
-      trailRetreatPct = Math.max(0.5, Math.min(1.5, atrPct * plan.trailingValue));
-    }
-
     for (let j = sig.index + 1; j < bars.length; j++) {
       const bar = bars[j];
       const barPrice = bar.close;
 
-      // 更新最高价（用 high）
       if (bar.high > highPrice) highPrice = bar.high;
 
-      // 1. 检查止损（先用 low，保守）
+      // 1. 止损
       if (bar.low <= stopPrice) {
         realizedPnlPct += remaining * ((stopPrice - entryPrice) / entryPrice) * 100;
         exitIdx = j;
@@ -345,7 +365,7 @@ function simulatePlan(allBars, entrySignals, plan) {
         break;
       }
 
-      // 2. 检查第一段部分止盈
+      // 2. 第一段部分止盈
       const pnlPct = ((barPrice - entryPrice) / entryPrice) * 100;
       if (!partial1Done && pnlPct >= plan.partial1Trigger) {
         realizedPnlPct += plan.partial1Size * pnlPct;
@@ -353,14 +373,14 @@ function simulatePlan(allBars, entrySignals, plan) {
         partial1Done = true;
       }
 
-      // 3. 检查第二段部分止盈
+      // 3. 第二段部分止盈
       if (plan.partial2Trigger && !partial2Done && pnlPct >= plan.partial2Trigger) {
         realizedPnlPct += plan.partial2Size * pnlPct;
         remaining -= plan.partial2Size;
         partial2Done = true;
       }
 
-      // 4. 检查跟踪止盈（第一段触发后启用）
+      // 4. 跟踪止盈
       if (partial1Done && remaining > 0.001) {
         const trailPrice = highPrice * (1 - trailRetreatPct / 100);
         if (barPrice <= trailPrice) {
@@ -375,7 +395,6 @@ function simulatePlan(allBars, entrySignals, plan) {
       }
     }
 
-    // 如果没触发任何出场（到数据末尾），用最后一根 K 线收盘价平仓
     if (exitIdx === -1) {
       const lastBar = bars[bars.length - 1];
       const lastPnlPct = ((lastBar.close - entryPrice) / entryPrice) * 100;
@@ -393,13 +412,13 @@ function simulatePlan(allBars, entrySignals, plan) {
       exitPrice,
       pnlPct: realizedPnlPct,
       atrPct,
+      trailRetreatPct,
       exitReason
     });
 
-    position = null;   // 立即释放
+    position = null;
   }
 
-  // 汇总
   const wins = trades.filter(t => t.pnlPct > 0);
   const losses = trades.filter(t => t.pnlPct < 0);
   const totalPnlPct = trades.reduce((s, t) => s + t.pnlPct, 0);
@@ -408,7 +427,6 @@ function simulatePlan(allBars, entrySignals, plan) {
   const avgLoss = losses.length > 0 ? losses.reduce((s, t) => s + t.pnlPct, 0) / losses.length : 0;
   const winRate = trades.length > 0 ? (wins.length / trades.length) * 100 : 0;
 
-  // 出场原因统计
   const stopCount = trades.filter(t => t.exitReason === 'stop').length;
   const trailingCount = trades.filter(t => t.exitReason === 'trailing').length;
   const eodCount = trades.filter(t => t.exitReason === 'eod').length;
@@ -433,11 +451,11 @@ function simulatePlan(allBars, entrySignals, plan) {
 // ═══════════════════════════════════════════════
 function renderResults(results, symbols, startDate, endDate) {
   const area = document.getElementById('resultArea');
+  const planKeys = Object.keys(PLANS);
 
-  // 找最佳方案
   let bestKey = null;
   let bestPnl = -Infinity;
-  for (const k in results) {
+  for (const k of planKeys) {
     if (results[k].totalPnlPct > bestPnl) {
       bestPnl = results[k].totalPnlPct;
       bestKey = k;
@@ -447,16 +465,16 @@ function renderResults(results, symbols, startDate, endDate) {
   let html = `<h2>📊 止盈方案对比（${startDate} 至 ${endDate}）</h2>`;
   html += `<div class="hint">监控标的：${symbols.join('、')} | 入场条件：动量 + ATR + 趋势确认（跳过新闻） | 止损：固定 ${FIXED_STOP_LOSS_PCT}%</div>`;
 
-  // 方案说明卡片
-  html += `<div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 12px;">`;
-  for (const k in PLANS) {
+  // 方案卡片
+  html += `<div class="plan-grid">`;
+  for (const k of planKeys) {
     const p = PLANS[k];
-    const cls = k === 'A' ? 'plan-a' : k === 'B' ? 'plan-b' : 'plan-c';
+    const clsMap = { A: 'plan-a', B: 'plan-b', C: 'plan-c', D: 'plan-d' };
     const r = results[k];
     const isBest = k === bestKey;
-    html += `<div class="plan-card ${cls}">
+    html += `<div class="plan-card ${clsMap[k]}">
       <div class="plan-title">方案 ${k}：${p.name}${isBest ? ' ⭐' : ''}</div>
-      <div style="color:#8b949e; font-size:12px;">${p.desc}</div>
+      <div style="color:#8b949e; font-size:11px;">${p.desc}</div>
       <div style="margin-top:8px;">
         <span style="color:#8b949e;">总盈亏：</span>
         <span style="font-weight:700; font-size:16px;" class="${r.totalPnlPct >= 0 ? 'profit' : 'loss'}">${r.totalPnlPct >= 0 ? '+' : ''}${r.totalPnlPct.toFixed(2)}%</span>
@@ -469,71 +487,66 @@ function renderResults(results, symbols, startDate, endDate) {
   html += `<h2>🔍 详细对比</h2>`;
   html += `<table><thead><tr>
     <th>指标</th>
-    <th>方案 A（当前）</th>
-    <th>方案 B（推荐）</th>
-    <th>方案 C（中间）</th>
+    ${planKeys.map(k => `<th>方案 ${k}（${PLANS[k].name}）</th>`).join('')}
   </tr></thead><tbody>`;
 
-  const row = (label, values, cls = '') => {
-    return `<tr>
-      <td>${label}</td>
-      ${values.map(v => `<td class="${cls}">${v}</td>`).join('')}
-    </tr>`;
+  const row = (label, values) => {
+    return `<tr><td>${label}</td>${values.map(v => `<td>${v}</td>`).join('')}</tr>`;
   };
 
-  html += row('总交易笔数', ['A','B','C'].map(k => results[k].totalTrades));
-  html += row('总盈亏 (%)',
-    ['A','B','C'].map(k => {
-      const r = results[k];
-      return `<span class="${r.totalPnlPct >= 0 ? 'profit' : 'loss'}">${r.totalPnlPct >= 0 ? '+' : ''}${r.totalPnlPct.toFixed(2)}%</span>`;
-    })
-  );
-  html += row('平均每笔 (%)',
-    ['A','B','C'].map(k => {
-      const r = results[k];
-      return `<span class="${r.avgPnlPct >= 0 ? 'profit' : 'loss'}">${r.avgPnlPct >= 0 ? '+' : ''}${r.avgPnlPct.toFixed(3)}%</span>`;
-    })
-  );
-  html += row('胜率 (%)', ['A','B','C'].map(k => results[k].winRate.toFixed(1) + '%'));
-  html += row('平均盈利 (%)',
-    ['A','B','C'].map(k => `<span class="profit">+${results[k].avgWin.toFixed(2)}%</span>`)
-  );
-  html += row('平均亏损 (%)',
-    ['A','B','C'].map(k => `<span class="loss">${results[k].avgLoss.toFixed(2)}%</span>`)
-  );
-  html += row('盈亏比',
-    ['A','B','C'].map(k => {
-      const r = results[k];
-      if (r.avgLoss === 0) return '—';
-      const ratio = Math.abs(r.avgWin / r.avgLoss);
-      return ratio.toFixed(2);
-    })
-  );
-  html += row('止损笔数', ['A','B','C'].map(k => results[k].stopCount));
-  html += row('跟踪止盈笔数', ['A','B','C'].map(k => results[k].trailingCount));
-  html += row('到末尾未平仓笔数', ['A','B','C'].map(k => results[k].eodCount));
+  html += row('总交易笔数', planKeys.map(k => results[k].totalTrades));
+  html += row('总盈亏 (%)', planKeys.map(k => {
+    const r = results[k];
+    return `<span class="${r.totalPnlPct >= 0 ? 'profit' : 'loss'}">${r.totalPnlPct >= 0 ? '+' : ''}${r.totalPnlPct.toFixed(2)}%</span>`;
+  }));
+  html += row('平均每笔 (%)', planKeys.map(k => {
+    const r = results[k];
+    return `<span class="${r.avgPnlPct >= 0 ? 'profit' : 'loss'}">${r.avgPnlPct >= 0 ? '+' : ''}${r.avgPnlPct.toFixed(3)}%</span>`;
+  }));
+  html += row('胜率 (%)', planKeys.map(k => results[k].winRate.toFixed(1) + '%'));
+  html += row('平均盈利 (%)', planKeys.map(k => `<span class="profit">+${results[k].avgWin.toFixed(2)}%</span>`));
+  html += row('平均亏损 (%)', planKeys.map(k => `<span class="loss">${results[k].avgLoss.toFixed(2)}%</span>`));
+  html += row('盈亏比', planKeys.map(k => {
+    const r = results[k];
+    if (r.avgLoss === 0) return '—';
+    return Math.abs(r.avgWin / r.avgLoss).toFixed(2);
+  }));
+  html += row('止损笔数', planKeys.map(k => results[k].stopCount));
+  html += row('跟踪止盈笔数', planKeys.map(k => results[k].trailingCount));
+  html += row('到末尾未平仓', planKeys.map(k => results[k].eodCount));
 
   html += '</tbody></table>';
 
-  // 建议
+  // 结论
   const bestR = results[bestKey];
   const aR = results.A;
-  const bR = results.B;
   const improvement = bestKey !== 'A' ? ((bestR.totalPnlPct - aR.totalPnlPct) / Math.abs(aR.totalPnlPct || 1) * 100) : 0;
 
-  html += `<div class="rec-box" style="padding:14px; border-radius:8px; margin-top:16px; background:#23863622; border:1px solid #23863644; color:#3fb950; font-size:14px; line-height:1.7;">
+  // 方案D 与 A/B/C 的对比
+  const dR = results.D;
+  const dVsA = ((dR.totalPnlPct - aR.totalPnlPct) / Math.abs(aR.totalPnlPct || 1) * 100).toFixed(1);
+  const dVsB = ((dR.totalPnlPct - results.B.totalPnlPct) / Math.abs(results.B.totalPnlPct || 1) * 100).toFixed(1);
+  const dVsC = ((dR.totalPnlPct - results.C.totalPnlPct) / Math.abs(results.C.totalPnlPct || 1) * 100).toFixed(1);
+
+  let recClass = 'rec-green';
+  if (bestKey === 'D') recClass = 'rec-blue';
+
+  html += `<div class="rec-box ${recClass}">
     <strong>💡 结论：</strong>历史回测期内，<strong>方案 ${bestKey}（${PLANS[bestKey].name}）</strong> 表现最好，总盈亏 <strong>${bestR.totalPnlPct.toFixed(2)}%</strong>。
     ${bestKey !== 'A' ? `相比当前的方案 A 提升约 <strong>${improvement.toFixed(1)}%</strong>。` : '与当前方案 A 一致或当前方案已是最优。'}
+    <br><br>
+    <strong>方案 D（本次验证目标）对比：</strong><br>
+    · vs 方案 A：<span class="${dVsA >= 0 ? 'profit' : 'loss'}">${dVsA >= 0 ? '+' : ''}${dVsA}%</span><br>
+    · vs 方案 B：<span class="${dVsB >= 0 ? 'profit' : 'loss'}">${dVsB >= 0 ? '+' : ''}${dVsB}%</span><br>
+    · vs 方案 C：<span class="${dVsC >= 0 ? 'profit' : 'loss'}">${dVsC >= 0 ? '+' : ''}${dVsC}%</span>
   </div>`;
 
-  // 提示
   html += `<div class="hint">
     <strong>说明：</strong><br>
     1. 回测跳过新闻情绪条件，只使用技术指标生成入场信号，因此交易次数比真实策略更多。<br>
     2. 止损简化为固定 ${FIXED_STOP_LOSS_PCT}%，未启用分级止损，专注对比止盈机制。<br>
-    3. "跟踪止盈笔数" = 第一段部分止盈后，剩余仓位通过跟踪止盈卖出的笔数。<br>
-    4. "到末尾未平仓" = 数据末尾仍持有，用最后一根 K 线收盘价平仓。<br>
-    5. 时间段越短，样本越小，结论越不可靠。建议至少 30-60 天。
+    3. 方案 D 的跟踪回撤 = clamp(ATR% × 1.0, 0.8%, 1.5%)，自适应每只股票波动率。<br>
+    4. 时间段越短，样本越小，结论越不可靠。建议至少 30-60 天。
   </div>`;
 
   area.innerHTML = html;
