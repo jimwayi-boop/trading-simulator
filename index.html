@@ -34,7 +34,6 @@
   .badge-live { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb; }
   .badge-idle { background: #8b949e33; color: #8b949e; border: 1px solid #8b949e; }
   .badge-error { background: #f8514933; color: #f85149; border: 1px solid #f85149; }
-  .badge-circuit { background: #f8514966; color: #fff; border: 1px solid #f85149; font-weight: 700; }
   .news-status { font-size: 11px; padding: 3px 5px; border-radius: 4px; margin-top: 5px; }
   .news-ok { background: #3fb95022; color: #3fb950; border: 1px solid #3fb95044; }
   .news-fallback { background: #d2992222; color: #d29922; border: 1px solid #d2992244; }
@@ -272,16 +271,14 @@ const NEWS_INTERVAL_HIGH_VOL = 10 * 60 * 1000;
 const NEWS_INTERVAL_NORMAL = 12 * 60 * 1000;
 
 // 新闻三层降级阈值
-const NEWS_NORMAL_LIMIT_MS = 30 * 60 * 1000;      // ≤30分钟 → 正常
-const NEWS_FALLBACK_LIMIT_MS = 60 * 60 * 1000;    // 30-60分钟 → 降级
-                                                   // >60分钟 → 停止
+const NEWS_NORMAL_LIMIT_MS = 30 * 60 * 1000;
+const NEWS_FALLBACK_LIMIT_MS = 60 * 60 * 1000;
 
 // 新闻时间衰减权重
 const NEWS_WEIGHT_0_15 = 1.0;
 const NEWS_WEIGHT_15_30 = 0.5;
 const NEWS_WEIGHT_30_60 = 0.2;
 
-const MAX_DAILY_TRADES_DEFAULT = 3;   // 备用默认值（分档失败时使用）
 const COMPOSITE_HIGH_THRESHOLD = 0.8;
 const PRICE_REFRESH_INTERVAL = 30 * 1000;
 const PNL_REFRESH_INTERVAL = 5 * 60 * 1000;
@@ -329,11 +326,11 @@ let secondsUntilNext = 0;
 let newsCache = {};
 let lastNewsFetchTime = 0;
 let lastStaleWarningTime = 0;
-let lastNewsSource = 'apitube';   // 当前主要使用的新闻源
+let lastNewsSource = 'apitube';
 
 let dailyTradeCount = {};
-let dailySymbolRealizedPnl = {};  // 每只股票当日已实现盈亏%
-let dailyAccountRealizedPnl = 0;  // 账户当日已实现盈亏%
+let dailySymbolRealizedPnl = {};
+let dailyAccountRealizedPnl = 0;
 let circuitBrokenToday = false;
 let circuitBrokenTime = null;
 let currentTradeDate = '';
@@ -349,7 +346,6 @@ let symbolAtrCache = {};
 let autoStartedToday = false;
 let autoStoppedToday = false;
 let symbolRealizedPnl = {};
-let lastReportDate = '';   // 记录上次发送邮件报告的日期（保留占位）
 
 let marketState = {
   isBull: true,
@@ -394,11 +390,10 @@ function getEasternDateString() {
 
 function isMarketOpen() {
   const m = getEasternMinutes();
-  return m >= 570 && m < 960;   // 9:30 - 16:00
+  return m >= 570 && m < 960;
 }
 
 function isBarCloseTime() {
-  // 5 分钟 K 线收盘时间：分钟数 % 5 == 0
   const m = getEasternMinutes();
   return m % 5 === 0;
 }
@@ -435,9 +430,9 @@ function cleanupPositionState(sym, closed) {
 function getNewsMode() {
   const age = Date.now() - lastNewsFetchTime;
   if (lastNewsFetchTime === 0) return 'stopped';
-  if (age <= NEWS_NORMAL_LIMIT_MS) return 'normal';       // 正常
-  if (age <= NEWS_FALLBACK_LIMIT_MS) return 'fallback';   // 降级
-  return 'stopped';                                       // 停止
+  if (age <= NEWS_NORMAL_LIMIT_MS) return 'normal';
+  if (age <= NEWS_FALLBACK_LIMIT_MS) return 'fallback';
+  return 'stopped';
 }
 
 function updateStatusUI() {
@@ -482,7 +477,6 @@ function updateStatusUI() {
   }
 }
 
-// 分档交易次数
 function getMaxDailyTrades(symbol) {
   const pnl = dailySymbolRealizedPnl[symbol] || 0;
   if (pnl < -1) return 0;
@@ -599,7 +593,6 @@ function calculateDynamicStopLoss(atrPct, isFallbackMode = false) {
   const raw = atrPct * multiplier;
   let stop = Math.max(minStop, Math.min(maxStop, raw));
 
-  // 降级模式：止损收紧 20%
   if (isFallbackMode) stop = stop * 0.8;
 
   return stop;
@@ -666,7 +659,7 @@ async function calculateSymbolRealizedPnl() {
     const yearStart = new Date(now.getFullYear(), 0, 1).toISOString();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
-    const url = `${WORKER_URL}/alpaca-trade/v2/account/activities?activity_type=FILL&after=${yearStart}&direction=asc&page_size=500`;
+    const url = `${WORKER_URL}/alpaca-trade/v2/account/activities?activity_type=FILL&after=${yearStart}&direction=asc&page_size=100`;
     const resp = await fetch(url);
     if (!resp.ok) return;
     const activities = await resp.json();
@@ -710,20 +703,19 @@ async function calculateSymbolRealizedPnl() {
 }
 
 // ═══════════════════════════════════════════════
-// 当日已实现盈亏刷新（用于分档交易次数和日内熔断）
+// 当日已实现盈亏
 // ═══════════════════════════════════════════════
 async function refreshDailyRealizedPnl() {
   try {
     const et = getEasternTime();
     const dayStart = new Date(et.getFullYear(), et.getMonth(), et.getDate()).toISOString();
 
-    const url = `${WORKER_URL}/alpaca-trade/v2/account/activities?activity_type=FILL&after=${dayStart}&direction=asc&page_size=500`;
+    const url = `${WORKER_URL}/alpaca-trade/v2/account/activities?activity_type=FILL&after=${dayStart}&direction=asc&page_size=100`;
     const resp = await fetch(url);
     if (!resp.ok) return;
     const activities = await resp.json();
     if (!Array.isArray(activities)) return;
 
-    // 按 symbol 用 FIFO 计算当日已实现盈亏
     const bySym = {};
     activities.forEach(a => {
       const sym = a.symbol;
@@ -763,24 +755,20 @@ async function refreshDailyRealizedPnl() {
         }
       }
 
-      // 已实现盈亏% = 收益 / 成本
       const pct = realizedCostDollars > 0 ? (realizedPnlDollars / realizedCostDollars) * 100 : 0;
       newDailySymbolPnl[sym] = pct;
-      // 账户影响 = 收益 / 初始资金
       accountTotal += (realizedPnlDollars / INITIAL_CAPITAL) * 100;
     }
 
     dailySymbolRealizedPnl = newDailySymbolPnl;
     dailyAccountRealizedPnl = accountTotal;
 
-    // 检查日内熔断
     if (!circuitBrokenToday && dailyAccountRealizedPnl <= -DAILY_LOSS_LIMIT_PCT) {
       circuitBrokenToday = true;
       circuitBrokenTime = new Date().toLocaleTimeString('zh-CN', { hour12: false, timeZone: 'America/New_York' });
       log(`🛑 日内熔断触发！当日已实现亏损 ${dailyAccountRealizedPnl.toFixed(2)}% ≤ -${DAILY_LOSS_LIMIT_PCT}%，暂停开新仓`, 'circuit');
     }
 
-    // 更新 UI
     updateStatusUI();
   } catch (e) {
     console.error('计算当日已实现盈亏失败:', e);
@@ -975,11 +963,6 @@ function checkAutoStartStop() {
 // ═══════════════════════════════════════════════
 // 新闻情绪（时间衰减加权 + 三层降级）
 // ═══════════════════════════════════════════════
-
-/**
- * 对文章列表按时间衰减加权计算情绪分
- * articles: [{score, published_at}]
- */
 function weightedSentiment(articles) {
   const now = Date.now();
   let totalWeightedScore = 0;
@@ -995,7 +978,7 @@ function weightedSentiment(articles) {
     if (ageMin <= 15) weight = NEWS_WEIGHT_0_15;
     else if (ageMin <= 30) weight = NEWS_WEIGHT_15_30;
     else if (ageMin <= 60) weight = NEWS_WEIGHT_30_60;
-    else return;   // 超过 60 分钟忽略
+    else return;
 
     totalWeightedScore += a.score * weight;
     totalWeight += weight;
@@ -1019,7 +1002,6 @@ async function fetchSentimentAPITube(symbol) {
   const articles = json.results || [];
   if (articles.length === 0) return { bullish: false, score: 0, source: 'apitube', newsCount: 0 };
 
-  // 提取每篇文章对目标实体的情绪分
   const extracted = [];
   articles.forEach(a => {
     let score = null;
@@ -1199,9 +1181,6 @@ async function closePosition(symbol) {
   return await resp.json();
 }
 
-/**
- * 带重试的平仓
- */
 async function closePositionWithRetry(symbol) {
   try {
     await closePosition(symbol);
@@ -1226,9 +1205,6 @@ async function fetchRecentOrders() {
   return await resp.json();
 }
 
-/**
- * 拆单：2 份
- */
 async function submitSplitOrder(symbol, totalQty, side) {
   const parts = SPLIT_PARTS;
   const qtyPerPart = totalQty / parts;
@@ -1273,26 +1249,6 @@ function checkUptrend(bars, timeframe) {
 }
 
 // ═══════════════════════════════════════════════
-// 邮件报告（占位，16:30 触发）
-// ═══════════════════════════════════════════════
-async function sendDailyReport() {
-  // 邮件功能待实现
-  // 触发时间：美东 16:30
-  // 内容：当日所有交易 + 熔断信息（若触发）
-  log('📧 每日报告生成（邮件功能待实现）', 'info');
-}
-
-function checkDailyReportTime() {
-  const m = getEasternMinutes();
-  const today = getEasternDateString();
-  if (m >= 990 && m < 1000 && lastReportDate !== today) {
-    // 16:30 到 16:40 之间触发一次
-    lastReportDate = today;
-    sendDailyReport();
-  }
-}
-
-// ═══════════════════════════════════════════════
 // 策略核心
 // ═══════════════════════════════════════════════
 async function runOneCycle() {
@@ -1318,7 +1274,6 @@ async function runOneCycle() {
       updateMarketState();
     }
 
-    // 刷新当日已实现盈亏（用于熔断和分档）
     await refreshDailyRealizedPnl();
 
     const symbols = getSelectedSymbols();
@@ -1336,7 +1291,6 @@ async function runOneCycle() {
     const timeStopMinutes = parseInt(document.getElementById('timeStopMinutes').value);
     const forceCloseMinutes = parseInt(document.getElementById('forceCloseMinutes').value);
 
-    // 新闻缓存更新
     const newsInterval = getNewsInterval();
     if ((Date.now() - lastNewsFetchTime) >= newsInterval) {
       updateNewsCacheAsync(symbols);
@@ -1347,7 +1301,6 @@ async function runOneCycle() {
     const newsModeLabel = newsMode === 'normal' ? '✅新闻正常' : newsMode === 'fallback' ? '⚠️新闻降级' : '🛑新闻停止';
     log(`── 检查周期 (${symbols.length}只) ${marketLabel} ${newsModeLabel} ──`, 'info');
 
-    // 账户
     let account;
     try {
       account = await fetchAccount();
@@ -1364,7 +1317,6 @@ async function runOneCycle() {
       return;
     }
 
-    // 持仓
     let positions;
     try {
       positions = await fetchPositions();
@@ -1386,7 +1338,6 @@ async function runOneCycle() {
           log(`${pos.symbol} 收盘强平成功`, 'sell');
         } else {
           log(`${pos.symbol} 收盘强平最终失败: ${result.error}`, 'sell');
-          // 待加入邮件报告
         }
       }
       updatePositionDisplay([]);
@@ -1421,7 +1372,6 @@ async function runOneCycle() {
 
       log(`持仓 ${sym}: ${qty.toFixed(4)}股 | 均价$${entryPrice.toFixed(2)} → $${currentPrice.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%) | 止损 ${dynamicStopLossPct.toFixed(2)}%${positionPartialTP[sym] ? ' [已部分止盈]' : ''}`, 'info');
 
-      // 部分止盈
       if (!positionPartialTP[sym] && pnlPct >= partialTPTriggerPct) {
         const halfQty = qty / 2;
         log(`${sym} 部分止盈触发 (+${pnlPct.toFixed(2)}%) → 卖出 50%`, 'buy');
@@ -1434,7 +1384,6 @@ async function runOneCycle() {
         }
       }
 
-      // 跟踪止盈
       if (positionPartialTP[sym]) {
         const trailPrice = highPrice * (1 - trailingTPRetreatPct / 100);
         if (currentPrice <= trailPrice) {
@@ -1449,7 +1398,6 @@ async function runOneCycle() {
         }
       }
 
-      // 分级止损
       if (!positionPartialTP[sym]) {
         const stopInfo = getEffectiveStopPrice(entryPrice, currentPrice, highPrice, dynamicStopLossPct, pnlPct);
         const effectiveStop = stopInfo.price;
@@ -1467,7 +1415,6 @@ async function runOneCycle() {
         }
       }
 
-      // 时间止损
       const holdMin = (Date.now() - positionEntryTime[sym]) / 60000;
       if (holdMin >= timeStopMinutes && pnlPct < TIME_STOP_MAX_PNL) {
         log(`${sym} 时间止损（持仓 ${holdMin.toFixed(0)} 分钟，浮盈 ${pnlPct.toFixed(2)}%）`, 'sell');
@@ -1480,7 +1427,6 @@ async function runOneCycle() {
         continue;
       }
 
-      // 新闻退出（仅新闻正常或降级时生效）
       if (newsMode !== 'stopped') {
         const cachedNews = newsCache[sym] || { bullish: false, score: 0, source: 'none' };
         if (!cachedNews.bullish && cachedNews.score < 0.15 && pnlPct < NEWS_EXIT_MAX_PNL) {
@@ -1495,7 +1441,6 @@ async function runOneCycle() {
         }
       }
 
-      // 加仓
       const posAdded = positionHighPrice[sym + '_added'];
       if (!posAdded && pnlPct >= addTriggerPct) {
         const currentExposurePct = (marketValue / totalEquity) * 100;
@@ -1532,14 +1477,12 @@ async function runOneCycle() {
 
     // ═══════════ 入场评估 ═══════════
 
-    // 条件 1：只在 K 线收盘时评估
     if (!isBarCloseTime()) {
       updatePositionDisplay(activePositions);
       await updateOrdersDisplay();
       return;
     }
 
-    // 条件 2：只在盘中评估（盘后不允许开新仓）
     if (!isMarketOpen()) {
       log('盘后时段，跳过入场评估（仅允许平仓）', 'info');
       updatePositionDisplay(activePositions);
@@ -1547,7 +1490,6 @@ async function runOneCycle() {
       return;
     }
 
-    // 条件 3：新闻未停止
     if (newsMode === 'stopped') {
       log('新闻数据 >60 分钟未更新，停止开新仓', 'warn');
       updatePositionDisplay(activePositions);
@@ -1555,7 +1497,6 @@ async function runOneCycle() {
       return;
     }
 
-    // 条件 4：未触发日内熔断
     if (circuitBrokenToday) {
       log(`日内熔断已触发（-${DAILY_LOSS_LIMIT_PCT}%），暂停开新仓`, 'warn');
       updatePositionDisplay(activePositions);
@@ -1563,7 +1504,6 @@ async function runOneCycle() {
       return;
     }
 
-    // 条件 5：持仓数量
     if (activePositions.length >= maxPositions) {
       log(`持仓已达上限 ${activePositions.length}/${maxPositions}`, 'info');
       updatePositionDisplay(activePositions);
@@ -1571,7 +1511,6 @@ async function runOneCycle() {
       return;
     }
 
-    // 条件 6：总敞口
     if (totalExposurePct >= maxTotalExposurePct) {
       log(`总敞口 ${totalExposurePct.toFixed(1)}% ≥ ${maxTotalExposurePct}%，不开新仓`, 'info');
       updatePositionDisplay(activePositions);
@@ -1589,7 +1528,6 @@ async function runOneCycle() {
     for (const sym of symbols) {
       if (heldSymbols.has(sym)) { log(`${sym} 已持有，跳过`, 'info'); continue; }
 
-      // 分档交易次数
       const maxTrades = getMaxDailyTrades(sym);
       const currentTrades = dailyTradeCount[sym] || 0;
       if (currentTrades >= maxTrades) {
@@ -1629,18 +1567,15 @@ async function runOneCycle() {
 
       let newsScoreForComposite = cachedNews.score;
 
-      // 新闻正常模式：需要新闻看涨
       if (newsMode === 'normal') {
         if (!cachedNews.bullish || cachedNews.score <= 0.3) {
           log(`${sym} 新闻不够看涨(${cachedNews.score.toFixed(2)}) [${cachedNews.source}]`, 'info');
           continue;
         }
       } else if (newsMode === 'fallback') {
-        // 降级模式：允许技术面独立入场，但新闻分作为次要因素（如果是看涨加分，非看涨不加分也不减分）
         if (cachedNews.bullish && cachedNews.score > 0.3) {
           // 新闻有信号，用真实分数
         } else {
-          // 新闻失效，用中性默认值
           newsScoreForComposite = 0.3;
         }
       }
@@ -1676,7 +1611,6 @@ async function runOneCycle() {
         continue;
       }
 
-      // 降级模式下仓位减半
       const sizeMultiplier = newsMode === 'fallback' ? 0.5 : 1.0;
       const effectiveBaseSizePct = baseSizePct * sizeMultiplier;
 
@@ -1781,7 +1715,6 @@ function startLoop() {
   log(`分档交易次数: < -1%: 0次 | -1%~0%: 1次 | 0%~+1%: 3次 | > +1%: 5次`, 'info');
   log(`入场评估: 仅 5 分钟 K 线收盘时（盘中）`, 'info');
   log(`盘后: 仅允许平仓，不允许开新仓`, 'info');
-  log(`邮件报告触发: 美东 16:30（待实现）`, 'info');
 
   runOneCycle().catch(e => { console.error(e); log(`循环错误: ${e.message}`, 'sell'); });
 
@@ -1801,7 +1734,6 @@ function startLoop() {
     document.getElementById('timerDisplay').textContent =
       `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     updateStatusUI();
-    checkDailyReportTime();
   }, 1000);
 }
 
@@ -1846,7 +1778,7 @@ document.addEventListener('DOMContentLoaded', () => {
   log('注意：请确保 Alpaca 账户是 Paper Trading 模式。', 'warn');
   log(`新闻源: APITube → Marketaux → Kiprio`, 'info');
   log(`多持仓模式：最多5只，单只≤10%，总≤75%`, 'info');
-  log(`✅ 所有优化已启用（邮件待实现）`, 'info');
+  log(`✅ 所有优化已启用，每日报告由 Val Town 独立发送`, 'info');
 });
 </script>
 </body>
