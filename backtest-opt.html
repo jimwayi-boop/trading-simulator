@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>股票自动交易策略A-优化回测工具</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0d1117; color: #c9d1d9; padding: 16px; font-size: 14px; }
+  .container { max-width: 1600px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 8px; }
+  h2 { font-size: 14px; margin: 20px 0 8px 0; color: #58a6ff; text-transform: uppercase; letter-spacing: .5px; }
+  .desc { font-size: 12px; color: #8b949e; margin-bottom: 12px; line-height: 1.6; }
+
+  .controls { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .controls label { font-size: 12px; color: #8b949e; }
+  .controls input[type="date"] { padding: 6px 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 5px; color: #c9d1d9; font-size: 13px; }
+  .controls .symbols-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .controls .symbols-group label { display: flex; align-items: center; gap: 3px; font-size: 13px; color: #c9d1d9; margin: 0; }
+  .controls button { padding: 7px 14px; background: #238636; color: #fff; border: none; border-radius: 5px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .controls button:hover { background: #2ea043; }
+  .controls button:disabled { background: #30363d; color: #8b949e; cursor: not-allowed; }
+
+  .preset-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .preset-btn { padding: 5px 10px; background: #21262d; border: 1px solid #30363d; border-radius: 5px; color: #c9d1d9; font-size: 12px; cursor: pointer; }
+  .preset-btn:hover { background: #30363d; }
+
+  .tabs { display: flex; gap: 4px; margin-top: 16px; border-bottom: 1px solid #30363d; overflow-x: auto; }
+  .tab { padding: 8px 16px; background: transparent; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; color: #8b949e; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .tab:hover { color: #c9d1d9; }
+  .tab.active { background: #161b22; border-color: #30363d; color: #58a6ff; }
+  .tab-content { display: none; padding: 16px 0; }
+  .tab-content.active { display: block; }
+
+  .tab-desc { font-size: 12px; color: #8b949e; margin-bottom: 12px; line-height: 1.6; }
+  .tab-desc strong { color: #c9d1d9; }
+
+  .progress { margin-top: 12px; padding: 10px 14px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; font-size: 13px; display: none; }
+  .progress-bar { width: 100%; height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; margin-top: 8px; }
+  .progress-fill { height: 100%; background: #58a6ff; width: 0%; transition: width .3s; }
+
+  table { width: 100%; border-collapse: collapse; background: #161b22; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; font-size: 13px; margin-top: 8px; }
+  th { background: #21262d; color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; padding: 8px 10px; text-align: left; font-weight: 600; }
+  td { padding: 8px 10px; border-top: 1px solid #21262d; }
+  tr:hover { background: #1c2128; }
+  tr.best-row { background: #23863622; }
+  tr.best-row td { color: #3fb950; font-weight: 600; }
+
+  .hint { font-size: 11px; color: #8b949e; margin-top: 8px; line-height: 1.6; }
+  .error { padding: 12px; background: #f8514922; color: #f85149; border: 1px solid #f8514944; border-radius: 6px; margin-top: 12px; }
+
+  .profit { color: #3fb950; }
+  .loss { color: #f85149; }
+  .warn { color: #d29922; }
+  .blue { color: #58a6ff; }
+
+  .rec-box { padding: 14px; border-radius: 8px; margin-top: 16px; font-size: 14px; line-height: 1.7; }
+  .rec-green { background: #23863622; border: 1px solid #23863644; color: #3fb950; }
+  .rec-yellow { background: #d2992222; border: 1px solid #d2992244; color: #d29922; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>📊 股票自动交易策略A-优化回测工具</h1>
+  <div class="desc">
+    用历史 5 分钟 K 线模拟策略入场。此回测<strong>跳过新闻条件</strong>，只使用动量 + ATR + 趋势确认。新闻情绪用<strong>成交量比率</strong>近似模拟（成交量高 = 新闻热度高）。<br>
+    基准参数：止损 1.5% | 部分止盈 1.5% 卖 50% | 跟踪回撤 1.2% | 基础仓位 5%
+  </div>
+
+  <div class="controls">
+    <label>开始日期：</label>
+    <input type="date" id="startDate">
+    <label>结束日期：</label>
+    <input type="date" id="endDate">
+
+    <div class="symbols-group" id="symbolsGroup">
+      <label><input type="checkbox" value="TSLA" checked> TSLA</label>
+      <label><input type="checkbox" value="AAPL" checked> AAPL</label>
+      <label><input type="checkbox" value="GOOGL" checked> GOOGL</label>
+      <label><input type="checkbox" value="NVDA" checked> NVDA</label>
+      <label><input type="checkbox" value="META" checked> META</label>
+    </div>
+
+    <button id="btnRun">▶ 运行当前选项卡的测试</button>
+  </div>
+
+  <div class="preset-row">
+    <button class="preset-btn" data-days="10">最近 10 天</button>
+    <button class="preset-btn" data-days="20">最近 20 天</button>
+    <button class="preset-btn" data-days="30">最近 30 天</button>
+    <button class="preset-btn" data-days="60">最近 60 天</button>
+    <button class="preset-btn" data-days="90">最近 90 天</button>
+    <button class="preset-btn" data-days="180">最近 180 天</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="tab1">优化4：评分权重</button>
+    <button class="tab" data-tab="tab2">优化5：动量阈值</button>
+    <button class="tab" data-tab="tab3">优化6：时间止损</button>
+    <button class="tab" data-tab="tab4">优化7：动态仓位</button>
+  </div>
+
+  <!-- 选项卡1：评分权重 -->
+  <div class="tab-content active" id="tab1">
+    <div class="tab-desc">
+      <strong>优化4：</strong>测试不同的新闻情绪权重 vs 动量权重组合。<br>
+      当前：情绪 0.6 / 动量 0.4。测试其他组合看历史表现是否更优。
+    </div>
+    <div id="result-tab1"></div>
+  </div>
+
+  <!-- 选项卡2：动量阈值 -->
+  <div class="tab-content" id="tab2">
+    <div class="tab-desc">
+      <strong>优化5：</strong>测试固定的动量阈值 vs 基于 ATR 归一化的动态阈值。<br>
+      当前：所有股票统一用 0.35%。测试 ATR × 0.3 和 ATR × 0.4 等变体。
+    </div>
+    <div id="result-tab2"></div>
+  </div>
+
+  <!-- 选项卡3：时间止损 -->
+  <div class="tab-content" id="tab3">
+    <div class="tab-desc">
+      <strong>优化6：</strong>测试不同的时间止损窗口。<br>
+      当前：30 分钟浮亏平仓。测试 15 / 20 / 30 / 45 / 无时间止损。
+    </div>
+    <div id="result-tab3"></div>
+  </div>
+
+  <!-- 选项卡4：动态仓位 -->
+  <div class="tab-content" id="tab4">
+    <div class="tab-desc">
+      <strong>优化7：</strong>测试固定仓位 vs 基于综合评分的动态仓位。<br>
+      当前：所有信号都用 5% 仓位。测试动态 3%–7%。
+    </div>
+    <div id="result-tab4"></div>
+  </div>
+
+  <div class="progress" id="progress">
+    <span id="progressText">准备中...</span>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+</div>
+
+<script>
+const WORKER_URL = "https://trading-proxy.jimwayi.workers.dev";
+
+// ═══════════════════════════════════════════════
+// 基准参数
+// ═══════════════════════════════════════════════
+const BASELINE = {
+  weightSentiment: 0.6,
+  weightMomentum: 0.4,
+  momentumThresholdMode: 'fixed',
+  momentumThreshold: 0.35,
+  momentumThresholdMultiplier: 0.3,
+  timeStopMinutes: 30,
+  positionSizeMode: 'fixed',
+  fixedSize: 5,
+  stopLossPct: 1.5,
+  partialTPTrigger: 1.5,
+  partialTPSize: 0.5,
+  trailingTPRetreat: 1.2,
+  barRangeMax: 1.0,
+  atrThreshold: 1.5
+};
+
+// ═══════════════════════════════════════════════
+// UI 事件
+// ═══════════════════════════════════════════════
+const today = new Date();
+const d30ago = new Date(today.getTime() - 30 * 24 * 3600 * 1000);
+document.getElementById('endDate').value = today.toISOString().split('T')[0];
+document.getElementById('startDate').value = d30ago.toISOString().split('T')[0];
+
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const days = parseInt(btn.dataset.days);
+    const end = new Date();
+    const start = new Date(end.getTime() - days * 24 * 3600 * 1000);
+    document.getElementById('endDate').value = end.toISOString().split('T')[0];
+    document.getElementById('startDate').value = start.toISOString().split('T')[0];
+  });
+});
+
+let activeTab = 'tab1';
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(tab.dataset.tab).classList.add('active');
+    activeTab = tab.dataset.tab;
+  });
+});
+
+document.getElementById('btnRun').addEventListener('click', runTest);
+
+// ═══════════════════════════════════════════════
+// 主测试流程
+// ═══════════════════════════════════════════════
+async function runTest() {
+  const startDate = document.getElementById('startDate').value;
+  const endDate = document.getElementById('endDate').value;
+  const symbols = Array.from(document.querySelectorAll('#symbolsGroup input:checked')).map(c => c.value);
+
+  if (!startDate || !endDate) { alert('请选择开始和结束日期'); return; }
+  if (symbols.length === 0) { alert('请至少选择一只股票'); return; }
+
+  document.getElementById('btnRun').disabled = true;
+
+  const progress = document.getElementById('progress');
+  const progressText = document.getElementById('progressText');
+  const progressFill = document.getElementById('progressFill');
+  progress.style.display = 'block';
+
+  const resultAreaId = `result-${activeTab}`;
+  document.getElementById(resultAreaId).innerHTML = '';
+
+  try {
+    // 拉取 K 线
+    const allBars = {};
+    for (let i = 0; i < symbols.length; i++) {
+      const sym = symbols[i];
+      progressText.textContent = `拉取 ${sym} 历史 K 线...`;
+      progressFill.style.width = `${((i + 0.5) / symbols.length) * 30}%`;
+      const bars = await fetchBars(sym, startDate, endDate);
+      allBars[sym] = bars;
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    progressFill.style.width = '40%';
+    progressText.textContent = '运行测试...';
+
+    let results;
+    if (activeTab === 'tab1') results = runWeightTest(allBars);
+    else if (activeTab === 'tab2') results = runMomentumTest(allBars);
+    else if (activeTab === 'tab3') results = runTimeStopTest(allBars);
+    else if (activeTab === 'tab4') results = runSizingTest(allBars);
+
+    progressFill.style.width = '100%';
+    progressText.textContent = '完成';
+    renderResults(activeTab, results, symbols, startDate, endDate);
+
+  } catch (e) {
+    console.error(e);
+    document.getElementById(resultAreaId).innerHTML = `<div class="error">错误：${e.message}</div>`;
+  } finally {
+    document.getElementById('btnRun').disabled = false;
+    setTimeout(() => { progress.style.display = 'none'; }, 1500);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// 拉取 K 线
+// ═══════════════════════════════════════════════
+async function fetchBars(symbol, startDate, endDate) {
+  const start = new Date(startDate + 'T13:00:00Z').toISOString();
+  const end = new Date(new Date(endDate).getTime() + 24 * 3600 * 1000).toISOString();
+  const url = `${WORKER_URL}/alpaca-data/v2/stocks/${symbol}/bars?timeframe=5Min&start=${start}&end=${end}&limit=10000&feed=iex&sort=asc`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`${symbol} K线 HTTP ${resp.status}`);
+  const data = await resp.json();
+  return (data.bars || []).map(b => ({
+    time: new Date(b.t).getTime(),
+    open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v
+  }));
+}
+
+// ═══════════════════════════════════════════════
+// 核心模拟
+// ═══════════════════════════════════════════════
+function simulate(allBars, params) {
+  // 合并所有事件
+  const events = [];
+  for (const sym in allBars) {
+    allBars[sym].forEach((bar, idx) => events.push({ sym, idx, ...bar }));
+  }
+  events.sort((a, b) => a.time - b.time);
+
+  const currentIdx = {};
+  for (const sym in allBars) currentIdx[sym] = -1;
+
+  // 计算每只股票的成交量均线（用于模拟新闻评分）
+  const volMa = {};
+  for (const sym in allBars) {
+    const bars = allBars[sym];
+    volMa[sym] = bars.map((b, i) => {
+      if (i < 20) return null;
+      let sum = 0;
+      for (let j = i - 19; j <= i; j++) sum += bars[j].volume;
+      return sum / 20;
+    });
+  }
+
+  const trades = [];
+  let position = null;
+
+  for (const evt of events) {
+    currentIdx[evt.sym] = evt.idx;
+
+    // ── 出场检查 ──
+    if (position && position.sym === evt.sym) {
+      const bar = allBars[evt.sym][evt.idx];
+      const pnlPct = (bar.close - position.entryPrice) / position.entryPrice * 100;
+      const holdMin = (evt.time - position.entryTime) / 60000;
+
+      // 更新最高价
+      if (bar.high > position.highPrice) position.highPrice = bar.high;
+
+      // 时间止损（仅浮亏时）
+      if (params.timeStopMinutes && holdMin >= params.timeStopMinutes && pnlPct < 0 && !position.partialDone) {
+        position.realizedPnl += position.remaining * pnlPct;
+        trades.push({
+          symbol: evt.sym, entryTime: position.entryTime, exitTime: evt.time,
+          entryPrice: position.entryPrice, exitPrice: bar.close,
+          pnlPct: position.realizedPnl, exitReason: 'time',
+          composite: position.composite, size: position.size, holdMin
+        });
+        position = null;
+        continue;
+      }
+
+      // 部分止盈
+      if (!position.partialDone && pnlPct >= params.partialTPTrigger) {
+        position.partialDone = true;
+        position.realizedPnl += params.partialTPSize * pnlPct;
+        position.remaining -= params.partialTPSize;
+      }
+
+      // 跟踪止盈
+      if (position.partialDone && position.remaining > 0.001) {
+        const trail = position.highPrice * (1 - params.trailingTPRetreat / 100);
+        if (bar.close <= trail) {
+          const trailPnl = (trail - position.entryPrice) / position.entryPrice * 100;
+          position.realizedPnl += position.remaining * trailPnl;
+          trades.push({
+            symbol: evt.sym, entryTime: position.entryTime, exitTime: evt.time,
+            entryPrice: position.entryPrice, exitPrice: trail,
+            pnlPct: position.realizedPnl, exitReason: 'trail',
+            composite: position.composite, size: position.size, holdMin
+          });
+          position = null;
+          continue;
+        }
+      } else if (!position.partialDone) {
+        // 止损（部分止盈前）
+        const stopPrice = position.entryPrice * (1 - params.stopLossPct / 100);
+        if (bar.low <= stopPrice) {
+          position.realizedPnl += position.remaining * (-params.stopLossPct);
+          trades.push({
+            symbol: evt.sym, entryTime: position.entryTime, exitTime: evt.time,
+            entryPrice: position.entryPrice, exitPrice: stopPrice,
+            pnlPct: position.realizedPnl, exitReason: 'stop',
+            composite: position.composite, size: position.size, holdMin
+          });
+          position = null;
+          continue;
+        }
+      }
+      continue;
+    }
+
+    // ── 入场评估 ──
+    if (position) continue;
+
+    const candidates = [];
+    for (const sym in allBars) {
+      const idx = currentIdx[sym];
+      if (idx < 21) continue;
+      const bars = allBars[sym];
+      const bar = bars[idx];
+
+      // K 线振幅过滤
+      const barRange = (bar.high - bar.low) / bar.close * 100;
+      if (barRange > params.barRangeMax) continue;
+
+      // ATR 过滤
+      let atrSum = 0;
+      for (let j = idx - 19; j <= idx; j++) {
+        atrSum += (bars[j].high - bars[j].low) / bars[j].close * 100;
+      }
+      const atrPct = atrSum / 20;
+      if (atrPct > params.atrThreshold) continue;
+
+      // 动量
+      const pastPrice = bars[idx - 3].close;
+      const momentumPct = (bar.close - pastPrice) / pastPrice * 100;
+      const momentumThreshold = params.momentumThresholdMode === 'atr'
+        ? Math.max(0.2, atrPct * params.momentumThresholdMultiplier)
+        : params.momentumThreshold;
+      if (momentumPct < momentumThreshold) continue;
+
+      // 趋势确认
+      const recent = bars.slice(idx - 2, idx + 1);
+      if (recent[recent.length - 1].close <= recent[0].open) continue;
+      let upCount = 0;
+      for (let k = 1; k < recent.length; k++) {
+        if (recent[k].close > recent[k - 1].close) upCount++;
+      }
+      if (upCount < 2) continue;
+
+      // 模拟新闻评分（基于成交量比率）
+      const ma = volMa[sym][idx];
+      const volRatio = ma && ma > 0 ? bar.volume / ma : 1;
+      const newsScore = Math.max(0, Math.min(1, 0.3 + (volRatio - 1) * 0.4));
+
+      const momentumScore = Math.min(momentumPct / 5, 1);
+      const composite = newsScore * params.weightSentiment + momentumScore * params.weightMomentum;
+
+      candidates.push({
+        sym, idx, price: bar.close, time: evt.time,
+        atrPct, newsScore, momentumPct, composite
+      });
+    }
+
+    if (candidates.length === 0) continue;
+
+    candidates.sort((a, b) => b.composite - a.composite);
+    const best = candidates[0];
+
+    // 动态仓位
+    let size = params.fixedSize;
+    if (params.positionSizeMode === 'dynamic') {
+      if (best.composite >= 0.8) size = 7;
+      else if (best.composite >= 0.7) size = 6;
+      else if (best.composite >= 0.5) size = 5;
+      else size = 3;
+    }
+
+    position = {
+      sym: best.sym,
+      entryPrice: best.price,
+      entryTime: best.time,
+      entryIdx: best.idx,
+      highPrice: best.price,
+      composite: best.composite,
+      size: size,
+      partialDone: false,
+      remaining: 1.0,
+      realizedPnl: 0
+    };
+  }
+
+  // 期末平仓
+  if (position) {
+    const bars = allBars[position.sym];
+    const lastBar = bars[bars.length - 1];
+    const pnlPct = (lastBar.close - position.entryPrice) / position.entryPrice * 100;
+    position.realizedPnl += position.remaining * pnlPct;
+    trades.push({
+      symbol: position.sym, entryTime: position.entryTime, exitTime: lastBar.time,
+      entryPrice: position.entryPrice, exitPrice: lastBar.close,
+      pnlPct: position.realizedPnl, exitReason: 'eod',
+      composite: position.composite, size: position.size
+    });
+  }
+
+  return trades;
+}
+
+// ═══════════════════════════════════════════════
+// 计算统计
+// ═══════════════════════════════════════════════
+function calcStats(trades) {
+  const wins = trades.filter(t => t.pnlPct > 0);
+  const losses = trades.filter(t => t.pnlPct < 0);
+  const totalPnl = trades.reduce((s, t) => s + t.pnlPct, 0);
+  const avgPnl = trades.length > 0 ? totalPnl / trades.length : 0;
+  const winRate = trades.length > 0 ? (wins.length / trades.length) * 100 : 0;
+  const avgWin = wins.length > 0 ? wins.reduce((s, t) => s + t.pnlPct, 0) / wins.length : 0;
+  const avgLoss = losses.length > 0 ? losses.reduce((s, t) => s + t.pnlPct, 0) / losses.length : 0;
+  const profitFactor = avgLoss !== 0 ? Math.abs(avgWin / avgLoss) : 0;
+  const accountImpact = trades.reduce((s, t) => s + t.pnlPct * t.size / 100, 0);
+  return {
+    totalTrades: trades.length,
+    totalPnl,
+    avgPnl,
+    winRate,
+    avgWin,
+    avgLoss,
+    profitFactor,
+    accountImpact
+  };
+}
+
+// ═══════════════════════════════════════════════
+// 各选项卡测试
+// ═══════════════════════════════════════════════
+function runWeightTest(allBars) {
+  const variants = [
+    { name: '情绪 0.5 / 动量 0.5', weightSentiment: 0.5, weightMomentum: 0.5 },
+    { name: '情绪 0.6 / 动量 0.4 (当前)', weightSentiment: 0.6, weightMomentum: 0.4 },
+    { name: '情绪 0.7 / 动量 0.3', weightSentiment: 0.7, weightMomentum: 0.3 },
+    { name: '情绪 0.4 / 动量 0.6', weightSentiment: 0.4, weightMomentum: 0.6 },
+    { name: '情绪 0.8 / 动量 0.2', weightSentiment: 0.8, weightMomentum: 0.2 },
+    { name: '情绪 0.3 / 动量 0.7', weightSentiment: 0.3, weightMomentum: 0.7 }
+  ];
+  return variants.map(v => {
+    const params = { ...BASELINE, ...v };
+    const trades = simulate(allBars, params);
+    return { name: v.name, stats: calcStats(trades) };
+  });
+}
+
+function runMomentumTest(allBars) {
+  const variants = [
+    { name: '固定 0.35% (当前)', mode: 'fixed', value: 0.35 },
+    { name: '固定 0.25%', mode: 'fixed', value: 0.25 },
+    { name: '固定 0.50%', mode: 'fixed', value: 0.50 },
+    { name: 'ATR × 0.3', mode: 'atr', value: 0.3 },
+    { name: 'ATR × 0.4', mode: 'atr', value: 0.4 },
+    { name: 'ATR × 0.5', mode: 'atr', value: 0.5 }
+  ];
+  return variants.map(v => {
+    const params = {
+      ...BASELINE,
+      momentumThresholdMode: v.mode,
+      momentumThreshold: v.mode === 'fixed' ? v.value : 0.35,
+      momentumThresholdMultiplier: v.mode === 'atr' ? v.value : 0.3
+    };
+    const trades = simulate(allBars, params);
+    return { name: v.name, stats: calcStats(trades) };
+  });
+}
+
+function runTimeStopTest(allBars) {
+  const variants = [
+    { name: '无时间止损', minutes: 0 },
+    { name: '15 分钟', minutes: 15 },
+    { name: '20 分钟', minutes: 20 },
+    { name: '30 分钟 (当前)', minutes: 30 },
+    { name: '45 分钟', minutes: 45 },
+    { name: '60 分钟', minutes: 60 }
+  ];
+  return variants.map(v => {
+    const params = { ...BASELINE, timeStopMinutes: v.minutes || null };
+    const trades = simulate(allBars, params);
+    return { name: v.name, stats: calcStats(trades) };
+  });
+}
+
+function runSizingTest(allBars) {
+  const variants = [
+    { name: '固定 3%', mode: 'fixed', size: 3 },
+    { name: '固定 5% (当前)', mode: 'fixed', size: 5 },
+    { name: '固定 7%', mode: 'fixed', size: 7 },
+    { name: '动态 3/5/6/7%', mode: 'dynamic', size: 5 }
+  ];
+  return variants.map(v => {
+    const params = { ...BASELINE, positionSizeMode: v.mode, fixedSize: v.size };
+    const trades = simulate(allBars, params);
+    return { name: v.name, stats: calcStats(trades) };
+  });
+}
+
+// ═══════════════════════════════════════════════
+// 渲染结果
+// ═══════════════════════════════════════════════
+function renderResults(tab, results, symbols, startDate, endDate) {
+  const resultAreaId = `result-${tab}`;
+  const area = document.getElementById(resultAreaId);
+
+  // 找最佳
+  let bestIdx = 0;
+  let bestVal = -Infinity;
+  results.forEach((r, i) => {
+    const metric = tab === 'tab4' ? r.stats.accountImpact : r.stats.totalPnl;
+    if (metric > bestVal) { bestVal = metric; bestIdx = i; }
+  });
+
+  let html = `<h2>📊 回测结果（${startDate} 至 ${endDate}）</h2>`;
+  html += `<div class="hint">监控标的：${symbols.join('、')} | 共 ${results[0].stats.totalTrades} 笔交易的变体参照</div>`;
+
+  html += `<table><thead><tr>
+    <th>变体</th>
+    <th>总交易</th>
+    <th>总盈亏 (%)</th>
+    <th>平均每笔 (%)</th>
+    <th>胜率 (%)</th>
+    <th>平均盈利 (%)</th>
+    <th>平均亏损 (%)</th>
+    <th>盈亏比</th>`;
+
+  if (tab === 'tab4') {
+    html += `<th>账户影响 (%)</th>`;
+  }
+  html += `</tr></thead><tbody>`;
+
+  results.forEach((r, i) => {
+    const s = r.stats;
+    const isBest = i === bestIdx;
+    const pnlClass = s.totalPnl >= 0 ? 'profit' : 'loss';
+    const rowClass = isBest ? 'best-row' : '';
+
+    html += `<tr class="${rowClass}">
+      <td><strong>${r.name}</strong>${isBest ? ' ⭐' : ''}</td>
+      <td>${s.totalTrades}</td>
+      <td class="${pnlClass}">${s.totalPnl >= 0 ? '+' : ''}${s.totalPnl.toFixed(2)}%</td>
+      <td class="${s.avgPnl >= 0 ? 'profit' : 'loss'}">${s.avgPnl >= 0 ? '+' : ''}${s.avgPnl.toFixed(3)}%</td>
+      <td>${s.winRate.toFixed(1)}%</td>
+      <td class="profit">+${s.avgWin.toFixed(2)}%</td>
+      <td class="loss">${s.avgLoss.toFixed(2)}%</td>
+      <td>${s.profitFactor.toFixed(2)}</td>`;
+
+    if (tab === 'tab4') {
+      html += `<td class="${s.accountImpact >= 0 ? 'profit' : 'loss'}">${s.accountImpact >= 0 ? '+' : ''}${s.accountImpact.toFixed(2)}%</td>`;
+    }
+    html += `</tr>`;
+  });
+  html += `</tbody></table>`;
+
+  // 结论
+  const bestR = results[bestIdx];
+  const baseIdx = results.findIndex(r => r.name.includes('当前'));
+  const baseR = baseIdx >= 0 ? results[baseIdx] : results[0];
+  const bestMetric = tab === 'tab4' ? bestR.stats.accountImpact : bestR.stats.totalPnl;
+  const baseMetric = tab === 'tab4' ? baseR.stats.accountImpact : baseR.stats.totalPnl;
+  const improvement = baseMetric !== 0 ? ((bestMetric - baseMetric) / Math.abs(baseMetric) * 100) : 0;
+
+  html += `<div class="rec-box ${bestIdx === baseIdx ? 'rec-yellow' : 'rec-green'}">
+    <strong>💡 结论：</strong>最优变体是 <strong>${bestR.name}</strong>，
+    ${tab === 'tab4' ? '账户影响' : '总盈亏'} <strong>${bestMetric >= 0 ? '+' : ''}${bestMetric.toFixed(2)}%</strong>。
+    ${bestIdx !== baseIdx
+      ? `相比当前参数提升约 <strong>${improvement.toFixed(1)}%</strong>。`
+      : '当前参数已是最优或接近最优。'}
+  </div>`;
+
+  // 说明
+  const explanations = {
+    tab1: '说明：权重影响综合评分的计算，从而影响候选股票的排序。当多只股票同时满足条件时，权重决定优先买哪只。',
+    tab2: '说明：动量阈值决定哪些股票有资格进入候选池。固定阈值对所有股票一致；ATR 模式根据每只股票的波动率自适应调整。',
+    tab3: '说明：时间止损在浮亏且超过指定时间后平仓。缩短时间可减少资金占用，但可能错过反弹；延长时间则给更多机会，但风险更大。',
+    tab4: '说明：总盈亏(%) 是每笔交易盈亏百分比的简单加总，不受仓位大小影响。账户影响(%) 是每笔交易盈亏百分比乘以仓位占比后的加总，反映实际账户的增长。'
+  };
+  html += `<div class="hint">${explanations[tab]}</div>`;
+
+  html += `<div class="hint">
+    <strong>提示：</strong>回测跳过真实新闻，用成交量比率近似新闻热度。结果仅供横向对比，不代表实际收益。时间段越短，样本越小，结论越不稳定。
+  </div>`;
+
+  area.innerHTML = html;
+}
+</script>
+</body>
+</html>
