@@ -141,18 +141,22 @@
       <div><label>市场更新 (分钟)</label><input type="number" id="marketUpdateMin" value="30" step="5"></div>
     </div>
 
-    <h3 style="margin-top:10px;">市场状态 (SPY)</h3>
+    <h3 style="margin-top:10px;">市场状态 (四层降级)</h3>
     <div class="market-box">
       <div class="market-row">
         <span class="market-label">状态</span>
         <span class="market-value" id="marketStateText">未加载</span>
       </div>
       <div class="market-row">
-        <span class="market-label">SPY 当前价</span>
+        <span class="market-label">数据源</span>
+        <span class="market-value" id="marketSourceText">—</span>
+      </div>
+      <div class="market-row">
+        <span class="market-label">参考价格</span>
         <span class="market-value" id="marketSpyPrice">—</span>
       </div>
       <div class="market-row">
-        <span class="market-label">SPY 20 日均线</span>
+        <span class="market-label">参考均线</span>
         <span class="market-value" id="marketSpyMa20">—</span>
       </div>
       <div class="market-row">
@@ -213,7 +217,7 @@
     <div class="hint">收盘强平：美东 15:57（失败重试 1 次）</div>
     <div class="hint">日内熔断：-2%</div>
     <div class="hint">入场评估：仅 5 分钟 K 线收盘时（盘中）</div>
-    <div class="hint">新闻请求间隔：5 秒 / APITube 429 退避 30 秒</div>
+    <div class="hint">市场状态：SPY日线 → SPY5分 → QQQ日线 → 5股投票</div>
   </div>
 
   <div class="panel">
@@ -278,9 +282,8 @@ const NEWS_WEIGHT_0_15 = 1.0;
 const NEWS_WEIGHT_15_30 = 0.5;
 const NEWS_WEIGHT_30_60 = 0.2;
 
-// ✅ 新增：新闻请求间隔 & 429 退避时间
-const NEWS_REQUEST_INTERVAL_MS = 5000;   // 每只股票之间间隔 5 秒
-const APITUBE_429_BACKOFF_MS = 30000;    // APITube 429 后等待 30 秒重试
+const NEWS_REQUEST_INTERVAL_MS = 5000;
+const APITUBE_429_BACKOFF_MS = 30000;
 
 const COMPOSITE_HIGH_THRESHOLD = 0.8;
 const PRICE_REFRESH_INTERVAL = 30 * 1000;
@@ -349,7 +352,8 @@ let marketState = {
   spyPrice: null,
   spyMa20: null,
   lastUpdate: 0,
-  loaded: false
+  loaded: false,
+  source: 'none'    // 'spy_daily' | 'spy_5min' | 'qqq_daily' | 'stock_vote' | 'none'
 };
 
 // ═══════════════════════════════════════════════
@@ -506,51 +510,208 @@ function updatePnlDisplay(account) {
 }
 
 // ═══════════════════════════════════════════════
-// 市场状态
+// 市场状态（四层降级链）
 // ═══════════════════════════════════════════════
-async function updateMarketState() {
+
+/**
+ * 方案 1：SPY 日线（40 根，当前价 vs 20 日均线）
+ */
+async function trySpyDaily() {
   try {
     const url = `${WORKER_URL}/alpaca-data/v2/stocks/SPY/bars?timeframe=1Day&limit=40&feed=iex&sort=desc`;
     const resp = await fetch(url);
-    if (!resp.ok) {
-      log(`获取 SPY 数据失败: ${resp.status}`, 'warn');
-      return;
-    }
+    if (!resp.ok) return null;
     const data = await resp.json();
     const bars = (data.bars || []).reverse();
-    if (bars.length < MA_WINDOW) {
-      log(`SPY 数据不足 ${MA_WINDOW} 根`, 'warn');
-      return;
-    }
+    if (bars.length < MA_WINDOW) return null;
 
     const recent20 = bars.slice(-MA_WINDOW);
     const ma20 = recent20.reduce((s, b) => s + b.c, 0) / MA_WINDOW;
     const currentPrice = bars[bars.length - 1].c;
 
-    const wasLoaded = marketState.loaded;
-    const wasBull = marketState.isBull;
-    marketState = {
+    return {
       isBull: currentPrice > ma20,
-      spyPrice: currentPrice,
-      spyMa20: ma20,
+      price: currentPrice,
+      ma: ma20,
+      source: 'spy_daily'
+    };
+  } catch (e) {
+    console.warn('SPY 日线获取失败:', e);
+    return null;
+  }
+}
+
+/**
+ * 方案 2：SPY 5 分钟（400 根，最近 1 天均价 vs 前 1 天均价）
+ * 1 天 ≈ 78 根 5 分钟 K 线（6.5 小时 × 12）
+ */
+async function trySpy5Min() {
+  try {
+    const url = `${WORKER_URL}/alpaca-data/v2/stocks/SPY/bars?timeframe=5Min&limit=400&feed=iex&sort=desc`;
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const bars = (data.bars || []).reverse();
+    // 至少需要约 156 根（2 天 × 78）
+    if (bars.length < 160) return null;
+
+    const barsPerDay = 78;
+    const recentDay = bars.slice(-barsPerDay);
+    const prevDay = bars.slice(-barsPerDay * 2, -barsPerDay);
+
+    if (prevDay.length === 0) return null;
+
+    const recentAvg = recentDay.reduce((s, b) => s + b.c, 0) / recentDay.length;
+    const prevAvg = prevDay.reduce((s, b) => s + b.c, 0) / prevDay.length;
+
+    return {
+      isBull: recentAvg > prevAvg,
+      price: recentAvg,
+      ma: prevAvg,
+      source: 'spy_5min'
+    };
+  } catch (e) {
+    console.warn('SPY 5分钟获取失败:', e);
+    return null;
+  }
+}
+
+/**
+ * 方案 3：QQQ 日线（40 根，当前价 vs 20 日均线）
+ */
+async function tryQqqDaily() {
+  try {
+    const url = `${WORKER_URL}/alpaca-data/v2/stocks/QQQ/bars?timeframe=1Day&limit=40&feed=iex&sort=desc`;
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const bars = (data.bars || []).reverse();
+    if (bars.length < MA_WINDOW) return null;
+
+    const recent20 = bars.slice(-MA_WINDOW);
+    const ma20 = recent20.reduce((s, b) => s + b.c, 0) / MA_WINDOW;
+    const currentPrice = bars[bars.length - 1].c;
+
+    return {
+      isBull: currentPrice > ma20,
+      price: currentPrice,
+      ma: ma20,
+      source: 'qqq_daily'
+    };
+  } catch (e) {
+    console.warn('QQQ 日线获取失败:', e);
+    return null;
+  }
+}
+
+/**
+ * 方案 4：5 只监控股票投票
+ * 至少 3 只当前价 > 20 日均线 → 牛市
+ */
+async function tryStockVote() {
+  try {
+    const symbols = getSelectedSymbols();
+    if (symbols.length === 0) return null;
+
+    let bullCount = 0;
+    let validCount = 0;
+
+    for (const sym of symbols) {
+      try {
+        const url = `${WORKER_URL}/alpaca-data/v2/stocks/${sym}/bars?timeframe=1Day&limit=40&feed=iex&sort=desc`;
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        const bars = (data.bars || []).reverse();
+        if (bars.length < MA_WINDOW) continue;
+
+        const recent20 = bars.slice(-MA_WINDOW);
+        const ma20 = recent20.reduce((s, b) => s + b.c, 0) / MA_WINDOW;
+        const currentPrice = bars[bars.length - 1].c;
+
+        validCount++;
+        if (currentPrice > ma20) bullCount++;
+      } catch (e) {
+        console.warn(`${sym} 日线获取失败:`, e);
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    if (validCount < 3) return null;
+
+    return {
+      isBull: bullCount >= 3,
+      price: bullCount,     // 用于显示：几只看涨
+      ma: validCount,       // 用于显示：有效股票数
+      source: 'stock_vote'
+    };
+  } catch (e) {
+    console.warn('5股投票失败:', e);
+    return null;
+  }
+}
+
+/**
+ * 主入口：按顺序尝试四层
+ */
+async function updateMarketState() {
+  log('正在更新市场状态（四层降级）...', 'info');
+
+  const wasLoaded = marketState.loaded;
+  const wasBull = marketState.isBull;
+  const wasSource = marketState.source;
+
+  let result = await trySpyDaily();
+  if (!result) {
+    log('SPY 日线不足，尝试 SPY 5 分钟', 'warn');
+    result = await trySpy5Min();
+  }
+  if (!result) {
+    log('SPY 5 分钟不足，尝试 QQQ 日线', 'warn');
+    result = await tryQqqDaily();
+  }
+  if (!result) {
+    log('QQQ 日线不足，尝试 5 股投票', 'warn');
+    result = await tryStockVote();
+  }
+
+  if (result) {
+    marketState = {
+      isBull: result.isBull,
+      spyPrice: result.price,
+      spyMa20: result.ma,
       lastUpdate: Date.now(),
-      loaded: true
+      loaded: true,
+      source: result.source
     };
 
     updateMarketStateUI();
 
-    if (!wasLoaded || wasBull !== marketState.isBull) {
-      log(`市场状态变化: SPY $${currentPrice.toFixed(2)} vs 20MA $${ma20.toFixed(2)} → ${marketState.isBull ? '🐂 牛市' : '🐻 熊市'}`, marketState.isBull ? 'buy' : 'sell');
+    const sourceLabel = {
+      'spy_daily': 'SPY日线',
+      'spy_5min': 'SPY5分钟',
+      'qqq_daily': 'QQQ日线',
+      'stock_vote': '5股投票'
+    }[result.source];
+
+    if (!wasLoaded || wasBull !== result.isBull || wasSource !== result.source) {
+      log(`市场状态更新: ${result.isBull ? '🐂 牛市' : '🐻 熊市'} [${sourceLabel}]`, result.isBull ? 'buy' : 'sell');
     } else {
-      log(`市场状态更新: ${marketState.isBull ? '🐂 牛市' : '🐻 熊市'} (SPY $${currentPrice.toFixed(2)})`, 'info');
+      log(`市场状态: ${result.isBull ? '🐂 牛市' : '🐻 熊市'} [${sourceLabel}]`, 'info');
     }
-  } catch (e) {
-    console.error('市场状态更新失败:', e);
+  } else {
+    log('❌ 所有市场状态数据源均失败，使用默认止损 1.5%', 'warn');
+    // 保持上次的状态，或使用默认
+    if (!marketState.loaded) {
+      marketState.source = 'none';
+      updateMarketStateUI();
+    }
   }
 }
 
 function updateMarketStateUI() {
   const stateEl = document.getElementById('marketStateText');
+  const sourceEl = document.getElementById('marketSourceText');
   const priceEl = document.getElementById('marketSpyPrice');
   const maEl = document.getElementById('marketSpyMa20');
   const rangeEl = document.getElementById('marketStopRange');
@@ -559,13 +720,32 @@ function updateMarketStateUI() {
   if (!marketState.loaded) {
     stateEl.textContent = '未加载';
     stateEl.className = 'market-value';
+    sourceEl.textContent = '—';
     return;
   }
 
   stateEl.textContent = marketState.isBull ? '🐂 牛市' : '🐻 熊市';
   stateEl.className = 'market-value ' + (marketState.isBull ? 'profit' : 'loss');
-  priceEl.textContent = '$' + marketState.spyPrice.toFixed(2);
-  maEl.textContent = '$' + marketState.spyMa20.toFixed(2);
+
+  const sourceLabels = {
+    'spy_daily': '① SPY日线',
+    'spy_5min': '② SPY5分钟',
+    'qqq_daily': '③ QQQ日线',
+    'stock_vote': '④ 5股投票',
+    'none': '⚠️ 无数据'
+  };
+  sourceEl.textContent = sourceLabels[marketState.source] || marketState.source;
+
+  if (marketState.source === 'stock_vote') {
+    priceEl.textContent = `${marketState.spyPrice}/${marketState.spyMa20} 只看涨`;
+    maEl.textContent = '（趋势投票）';
+  } else if (marketState.source === 'spy_5min') {
+    priceEl.textContent = '$' + marketState.spyPrice.toFixed(2);
+    maEl.textContent = '$' + marketState.spyMa20.toFixed(2) + ' (昨日均价)';
+  } else {
+    priceEl.textContent = '$' + marketState.spyPrice.toFixed(2);
+    maEl.textContent = '$' + marketState.spyMa20.toFixed(2) + ' (20MA)';
+  }
 
   if (marketState.isBull) {
     rangeEl.textContent = `${BULL_MIN_STOP}% ~ ${BULL_MAX_STOP}% (${BULL_ATR_MULTIPLIER}×)`;
@@ -989,24 +1169,17 @@ function weightedSentiment(articles) {
   };
 }
 
-/**
- * 调用 APITube，带 429 退避重试
- * 如果第一次返回 429，等待 30 秒后重试一次
- * 仍然 429 则抛出错误，交给上层降级
- */
 async function fetchSentimentAPITube(symbol) {
   const entityId = APITUBE_ENTITY_ID_MAP[symbol];
   if (!entityId) throw new Error(`未配置 ${symbol} 实体 ID`);
   const url = `${WORKER_URL}/news/?entity.id=${entityId}&per_page=10`;
 
   const doFetch = async () => {
-    const resp = await fetch(url);
-    return resp;
+    return await fetch(url);
   };
 
   let resp = await doFetch();
 
-  // ✅ 429 退避重试
   if (resp.status === 429) {
     log(`APITube 429 (${symbol})，等待 30 秒后重试一次...`, 'warn');
     await new Promise(r => setTimeout(r, APITUBE_429_BACKOFF_MS));
@@ -1107,7 +1280,6 @@ function updateNewsCacheAsync(symbols) {
         const result = await fetchNewsSentiment(sym);
         newsCache[sym] = { ...result, updatedAt: Date.now() };
         log(`新闻更新 ${sym}: ${result.bullish ? '看涨' : '中性'} (${result.score.toFixed(2)}, ${result.newsCount}篇有效) [${result.source}]`, 'info');
-        // ✅ 请求间隔从 1.5 秒改为 5 秒
         await new Promise(r => setTimeout(r, NEWS_REQUEST_INTERVAL_MS));
       }
       lastNewsFetchTime = Date.now();
@@ -1318,9 +1490,17 @@ async function runOneCycle() {
     }
 
     const marketLabel = marketState.isBull ? '🐂 牛市' : '🐻 熊市';
+    const sourceLabels = {
+      'spy_daily': '①SPY日线',
+      'spy_5min': '②SPY5分',
+      'qqq_daily': '③QQQ日线',
+      'stock_vote': '④5股投票',
+      'none': '⚠️无数据'
+    };
+    const sourceLabel = sourceLabels[marketState.source] || '';
     const newsMode = getNewsMode();
     const newsModeLabel = newsMode === 'normal' ? '✅新闻正常' : newsMode === 'fallback' ? '⚠️新闻降级' : '🛑新闻停止';
-    log(`── 检查周期 (${symbols.length}只) ${marketLabel} ${newsModeLabel} ──`, 'info');
+    log(`── 检查周期 (${symbols.length}只) ${marketLabel} [${sourceLabel}] ${newsModeLabel} ──`, 'info');
 
     let account;
     try {
@@ -1725,6 +1905,7 @@ function startLoop() {
   log(`新闻三层：≤30分正常 / 30-60分降级（仓位减半+止损×0.8）/ >60分停止`, 'info');
   log(`新闻时间衰减加权：0-15分×1.0 / 15-30分×0.5 / 30-60分×0.2`, 'info');
   log(`新闻请求间隔: 5 秒 / APITube 429 退避: 30 秒`, 'info');
+  log(`市场状态: SPY日线 → SPY5分 → QQQ日线 → 5股投票`, 'info');
   log(`止盈: ${document.getElementById('partialTPTrigger').value}% 卖50% → 剩余跟踪回撤${document.getElementById('trailingTPRetreat').value}%`, 'info');
   log(`止损: ATR × 乘数 (🐂 ${BULL_ATR_MULTIPLIER}×, 🐻 ${BEAR_ATR_MULTIPLIER}×)`, 'info');
   log(`拆单: ${SPLIT_PARTS} 份`, 'info');
@@ -1796,6 +1977,7 @@ document.addEventListener('DOMContentLoaded', () => {
   log('注意：请确保 Alpaca 账户是 Paper Trading 模式。', 'warn');
   log(`新闻源: APITube → Marketaux → Kiprio`, 'info');
   log(`多持仓模式：最多5只，单只≤10%，总≤75%`, 'info');
+  log(`市场状态：SPY日线 → SPY5分 → QQQ日线 → 5股投票`, 'info');
   log(`✅ 所有优化已启用，每日报告由 Val Town 独立发送`, 'info');
 });
 </script>
