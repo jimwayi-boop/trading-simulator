@@ -116,7 +116,7 @@
 
     <div class="row">
       <div><label>部分止盈触发 (%)</label><input type="number" id="partialTPTrigger" value="1.5" step="0.1"></div>
-      <div><label>跟踪止盈回撤 (%)</label><input type="number" id="trailingTPRetreat" value="0.8" step="0.1"></div>
+      <div><label>跟踪止盈回撤 (%)</label><input type="number" id="trailingTPRetreat" value="1.2" step="0.1"></div>
       <div><label>动量阈值 (%)</label><input type="number" id="momentumThreshold" value="0.35" step="0.05"></div>
     </div>
 
@@ -182,8 +182,8 @@
     <button class="btn-reset" id="btnReset">重置日志</button>
 
     <div class="hint">APITube → Marketaux → Kiprio 三层降级</div>
+    <div class="hint">止盈：1.5% 卖50% + 剩余跟踪回撤 <strong>1.2%</strong></div>
     <div class="hint">止损：ATR × 乘数，牛市 1.5×[1.5%-3%]，熊市 1.0×[0.8%-1.5%]</div>
-    <div class="hint">止盈：1.5% 卖50% + 剩余跟踪回撤0.8%</div>
     <div class="hint">时间止损：仅浮亏时启用</div>
     <div class="hint">收盘强平：美东 15:55</div>
   </div>
@@ -247,7 +247,7 @@ const MAX_DAILY_TRADES_PER_SYMBOL = 3;
 const COMPOSITE_HIGH_THRESHOLD = 0.8;
 const PRICE_REFRESH_INTERVAL = 30 * 1000;
 const PNL_REFRESH_INTERVAL = 5 * 60 * 1000;
-const ATR_REFRESH_INTERVAL = 5 * 60 * 1000;   // ATR 缓存刷新间隔
+const ATR_REFRESH_INTERVAL = 5 * 60 * 1000;
 const INITIAL_CAPITAL = 100000;
 
 // ATR 动态止损 + 市场过滤参数
@@ -296,8 +296,7 @@ let positionPartialTP = {};
 let positionAtrPct = {};
 let positionStopLossPct = {};
 
-// ATR 缓存（用于价格卡片显示）
-let symbolAtrCache = {};      // { symbol: { atrPct, updatedAt } }
+let symbolAtrCache = {};
 
 let autoStartedToday = false;
 let autoStoppedToday = false;
@@ -497,7 +496,6 @@ function getEffectiveStopPrice(entryPrice, currentPrice, highPrice, stopLossPct,
   }
 }
 
-// 获取当前止损阶段（仅用于显示）
 function getStopStageName(pnlPct) {
   if (pnlPct < STAGE_BREAKEVEN_PCT) return '成本止损';
   if (pnlPct < STAGE_LOCK_05_PCT) return '保本';
@@ -597,7 +595,6 @@ async function updateLivePrices() {
   if (symbols.length === 0) return;
 
   try {
-    // 先刷新 ATR 缓存（限速）
     await refreshAtrCache(symbols);
 
     const symbolsParam = symbols.join(',');
@@ -609,7 +606,6 @@ async function updateLivePrices() {
     const snapshots = snapResp.ok ? await snapResp.json() : {};
     const positions = posResp.ok ? await posResp.json() : [];
 
-    // 持仓映射（用于显示盈亏和当前阶段）
     const posMap = {};
     (positions || []).forEach(p => {
       const entry = parseFloat(p.avg_entry_price);
@@ -652,7 +648,6 @@ async function updateLivePrices() {
         changeStr = prevClose ? `${arrow} ${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)` : '';
       }
 
-      // 盈亏
       let dayPl = 0, monthPl = 0, yearPl = 0;
       let hasPosition = false;
       if (pos) {
@@ -681,12 +676,10 @@ async function updateLivePrices() {
           </div>`
         : `<div class="price-pnl-block"><div class="price-pnl-line"><span class="price-pnl-label">未持有</span></div></div>`;
 
-      // 止损块
       let stopBlock = '';
       if (atrPct !== null) {
         const dynStop = calculateDynamicStopLoss(atrPct);
         if (hasPosition) {
-          // 持仓中：显示入场时的止损% + 当前阶段
           const entryStopPct = positionStopLossPct[sym] || dynStop;
           const stageName = pos.stage;
           stopBlock = `<div class="price-stop-block">
@@ -695,7 +688,6 @@ async function updateLivePrices() {
             <div class="price-stop-stage">[${stageName}]</div>
           </div>`;
         } else {
-          // 空仓：显示预估止损
           stopBlock = `<div class="price-stop-block">
             <span class="price-stop-atr">ATR ${atrPct.toFixed(2)}%</span> →
             <span class="price-stop-value">${dynStop.toFixed(2)}%</span>
@@ -1129,7 +1121,7 @@ async function runOneCycle() {
       if (positionPartialTP[sym]) {
         const trailPrice = highPrice * (1 - trailingTPRetreatPct / 100);
         if (currentPrice <= trailPrice) {
-          log(`${sym} 跟踪止盈触发 现价$${currentPrice.toFixed(2)} ≤ 跟踪线$${trailPrice.toFixed(2)}`, 'buy');
+          log(`${sym} 跟踪止盈触发 现价$${currentPrice.toFixed(2)} ≤ 跟踪线$${trailPrice.toFixed(2)}（高点$${highPrice.toFixed(2)} 回撤${trailingTPRetreatPct}%）`, 'buy');
           try {
             await closePosition(sym);
             cleanupPositionState(sym, true);
@@ -1386,9 +1378,9 @@ function startLoop() {
   document.getElementById('btnStop').style.display = 'block';
 
   log(`实时交易已启动 | 检查${intervalMin}分钟 | 新闻10/12分钟`, 'buy');
+  log(`止盈: ${document.getElementById('partialTPTrigger').value}% 卖50% → 剩余跟踪回撤${document.getElementById('trailingTPRetreat').value}%`, 'info');
   log(`止损: ATR × 乘数 (🐂 牛市 ${BULL_ATR_MULTIPLIER}×, 🐻 熊市 ${BEAR_ATR_MULTIPLIER}×)`, 'info');
   log(`范围: 🐂 牛市 [${BULL_MIN_STOP}%, ${BULL_MAX_STOP}%], 🐻 熊市 [${BEAR_MIN_STOP}%, ${BEAR_MAX_STOP}%]`, 'info');
-  log(`止盈: ${document.getElementById('partialTPTrigger').value}% 卖50% → 剩余跟踪回撤${document.getElementById('trailingTPRetreat').value}%`, 'info');
   log(`时间止损: ${document.getElementById('timeStopMinutes').value}分钟仅浮亏时启用`, 'info');
   log(`收盘强平: 美东 15:55`, 'info');
 
@@ -1452,7 +1444,8 @@ document.addEventListener('DOMContentLoaded', () => {
   log('注意：请确保 Alpaca 账户是 Paper Trading 模式。', 'warn');
   log(`新闻源: APITube → Marketaux → Kiprio`, 'info');
   log(`多持仓模式：最多5只，单只≤10%，总≤75%`, 'info');
-  log(`动态止损: ATR × 乘数 × 市场状态`, 'info');
+  log(`止盈: 1.5% 卖50% + 剩余跟踪回撤 1.2%`, 'info');
+  log(`止损: ATR × 乘数 × 市场状态`, 'info');
   log(`🐂 牛市(SPY>20MA): ${BULL_ATR_MULTIPLIER}× ATR，范围[${BULL_MIN_STOP}%, ${BULL_MAX_STOP}%]`, 'info');
   log(`🐻 熊市(SPY<20MA): ${BEAR_ATR_MULTIPLIER}× ATR，范围[${BEAR_MIN_STOP}%, ${BEAR_MAX_STOP}%]`, 'info');
 });
