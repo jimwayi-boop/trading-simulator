@@ -22,11 +22,15 @@
   .controls button:hover { background: #2ea043; }
   .controls button:disabled { background: #30363d; color: #8b949e; cursor: not-allowed; }
 
-  .preset-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .preset-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+  .preset-label { font-size: 11px; color: #8b949e; margin-right: 4px; }
   .preset-btn { padding: 4px 10px; background: #21262d; border: 1px solid #30363d; border-radius: 5px; color: #c9d1d9; font-size: 12px; cursor: pointer; }
   .preset-btn:hover { background: #30363d; }
+  .preset-btn.highlight { background: #1f6feb33; border-color: #1f6feb; color: #58a6ff; }
+  .preset-btn.warn { background: #d2992233; border-color: #d29922; color: #d29922; }
+  .preset-btn.success { background: #23863633; border-color: #238636; color: #3fb950; }
 
-  .params-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 10px; padding: 10px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+  .params-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-top: 10px; padding: 10px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
   .param-item label { display: block; font-size: 11px; color: #8b949e; margin-bottom: 2px; }
   .param-item input { width: 100%; padding: 4px 6px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #c9d1d9; font-size: 12px; }
 
@@ -68,8 +72,8 @@
 <div class="container">
   <h1>📊 股票自动交易策略A-完整回测面板</h1>
   <div class="desc">
-    完整复现当前策略逻辑（多持仓轮动、ATR动态止损、分级止损、部分止盈+跟踪、加仓、时间止损、熔断、分档交易次数、盘后过滤等）。<br>
-    <strong>注意</strong>：<span style="color:#d29922;">新闻情绪用随机模拟（真实历史新闻无法回溯）</span>，其余策略逻辑与实际部署一致。
+    完整复现当前策略逻辑。新闻情绪用随机模拟（真实历史新闻无法回溯），其余策略逻辑与实际部署一致。<br>
+    <span style="color:#58a6ff;">提示：使用下方快捷按钮可一键应用常用参数组合，快速对比不同设置的效果。</span>
   </div>
 
   <div class="controls">
@@ -88,30 +92,57 @@
   </div>
 
   <div class="preset-row">
-    <button class="preset-btn" data-days="5">最近 5 天</button>
-    <button class="preset-btn" data-days="10">最近 10 天</button>
-    <button class="preset-btn" data-days="20">最近 20 天</button>
-    <button class="preset-btn" data-days="30">最近 30 天</button>
-    <button class="preset-btn" data-days="60">最近 60 天</button>
-    <button class="preset-btn" data-days="90">最近 90 天</button>
-    <button class="preset-btn" data-days="180">最近 180 天</button>
+    <span class="preset-label">📅 时间段：</span>
+    <button class="preset-btn" data-days="5">5天</button>
+    <button class="preset-btn" data-days="10">10天</button>
+    <button class="preset-btn" data-days="20">20天</button>
+    <button class="preset-btn" data-days="30">30天</button>
+    <button class="preset-btn" data-days="60">60天</button>
+    <button class="preset-btn" data-days="90">90天</button>
+    <button class="preset-btn" data-days="180">180天</button>
+  </div>
+
+  <div class="preset-row">
+    <span class="preset-label">🎛️ 参数组合：</span>
+    <button class="preset-btn" id="presetCurrent">当前设置（跟踪1.0%）</button>
+    <button class="preset-btn highlight" id="presetTrail15">跟踪回撤 1.5%</button>
+    <button class="preset-btn highlight" id="presetTrail20">跟踪回撤 2.0%</button>
+    <button class="preset-btn warn" id="presetFixedTP">禁用跟踪 → 固定止盈2.5%</button>
+    <button class="preset-btn success" id="presetCombo">推荐组合（META+TSLA+跟踪1.5%）</button>
+  </div>
+
+  <div class="preset-row">
+    <span class="preset-label">📊 标的组合：</span>
+    <button class="preset-btn" id="symAll">全选5只</button>
+    <button class="preset-btn highlight" id="symMetaTsla">只留 META+TSLA</button>
+    <button class="preset-btn" id="symMetaTslaAapl">META+TSLA+AAPL</button>
+    <button class="preset-btn" id="symTop3">META+TSLA+NVDA</button>
+  </div>
+
+  <div class="preset-row">
+    <span class="preset-label">🎲 稳定性测试：</span>
+    <button class="preset-btn" id="seedRandom">随机种子</button>
+    <button class="preset-btn" id="seed42">种子 42</button>
+    <button class="preset-btn" id="seed123">种子 123</button>
+    <button class="preset-btn" id="seed999">种子 999</button>
   </div>
 
   <div class="params-grid">
     <div class="param-item"><label>初始资金 ($)</label><input type="number" id="p_capital" value="100000"></div>
     <div class="param-item"><label>基础仓位 (%)</label><input type="number" id="p_baseSize" value="5" step="0.5"></div>
-    <div class="param-item"><label>部分止盈触发 (%)</label><input type="number" id="p_partialTP" value="1.5" step="0.1"></div>
-    <div class="param-item"><label>跟踪止盈回撤 (%)</label><input type="number" id="p_trailRetreat" value="1.2" step="0.1"></div>
-    <div class="param-item"><label>加仓触发 (%)</label><input type="number" id="p_addTrigger" value="1.5" step="0.5"></div>
+    <div class="param-item"><label>部分止盈触发 (%)</label><input type="number" id="p_partialTP" value="2.0" step="0.1"></div>
+    <div class="param-item"><label>跟踪止盈回撤 (%)</label><input type="number" id="p_trailRetreat" value="1.0" step="0.1"></div>
+    <div class="param-item"><label>固定止盈 (%) <span style="color:#8b949e;">0=禁用</span></label><input type="number" id="p_fixedTP" value="0" step="0.1"></div>
+    <div class="param-item"><label>加仓触发 (%)</label><input type="number" id="p_addTrigger" value="2.0" step="0.5"></div>
     <div class="param-item"><label>加仓比例 (%)</label><input type="number" id="p_addSize" value="3" step="0.5"></div>
     <div class="param-item"><label>单只上限 (%)</label><input type="number" id="p_maxExposure" value="10" step="1"></div>
-    <div class="param-item"><label>总敞口上限 (%)</label><input type="number" id="p_maxTotal" value="75" step="5"></div>
-    <div class="param-item"><label>最大持仓数</label><input type="number" id="p_maxPositions" value="5"></div>
-    <div class="param-item"><label>动量阈值 (%)</label><input type="number" id="p_momentum" value="0.35" step="0.05"></div>
-    <div class="param-item"><label>ATR 阈值 (%)</label><input type="number" id="p_atrThreshold" value="1.5" step="0.1"></div>
-    <div class="param-item"><label>时间止损 (分钟)</label><input type="number" id="p_timeStop" value="30"></div>
-    <div class="param-item"><label>日内熔断 (%)</label><input type="number" id="p_circuit" value="2" step="0.5"></div>
-    <div class="param-item"><label>收盘强平 (美东分)</label><input type="number" id="p_forceClose" value="957"></div>
+    <div class="param-item"><label>总敞口上限 (%)</label><input type="number" id="p_maxTotal" value="50" step="5"></div>
+    <div class="param-item"><label>最大持仓数</label><input type="number" id="p_maxPositions" value="3"></div>
+    <div class="param-item"><label>动量阈值 (%)</label><input type="number" id="p_momentum" value="0.6" step="0.05"></div>
+    <div class="param-item"><label>ATR 阈值 (%)</label><input type="number" id="p_atrThreshold" value="1.0" step="0.1"></div>
+    <div class="param-item"><label>时间止损 (分钟)</label><input type="number" id="p_timeStop" value="20"></div>
+    <div class="param-item"><label>日内熔断 (%)</label><input type="number" id="p_circuit" value="1.5" step="0.5"></div>
+    <div class="param-item"><label>收盘强平 (美东分)</label><input type="number" id="p_forceClose" value="950"></div>
     <div class="param-item"><label>K线周期 (分钟)</label><input type="number" id="p_tf" value="5"></div>
     <div class="param-item"><label>滑点 NVDA/META (%)</label><input type="number" id="p_slipLow" value="0.05" step="0.01"></div>
     <div class="param-item"><label>滑点 其他 (%)</label><input type="number" id="p_slipHigh" value="0.1" step="0.01"></div>
@@ -136,7 +167,7 @@ const FIXED_PARAMS = {
   STAGE_BREAKEVEN_PCT: 0.3,
   STAGE_LOCK_05_PCT: 0.8,
   STAGE_LOCK_1_PCT: 1.5,
-  TRAILING_STOP_PCT: 0.006,   // 分级止损中的 0.6%
+  TRAILING_STOP_PCT: 0.006,
   BULL_ATR_MULT: 1.5, BULL_MIN_STOP: 1.5, BULL_MAX_STOP: 3.0,
   BEAR_ATR_MULT: 1.0, BEAR_MIN_STOP: 0.8, BEAR_MAX_STOP: 1.5,
   NEWS_EXIT_MAX_PNL: 1.0,
@@ -154,17 +185,19 @@ const FIXED_PARAMS = {
 function getSelectedSymbols() {
   return Array.from(document.querySelectorAll('#symbolsGroup input:checked')).map(c => c.value);
 }
+function setSelectedSymbols(symbols) {
+  document.querySelectorAll('#symbolsGroup input').forEach(c => {
+    c.checked = symbols.includes(c.value);
+  });
+}
 function fmtMoney(v) { return (v >= 0 ? '+' : '') + '$' + v.toFixed(2); }
 function fmtPct(v, digits = 2) { return (v >= 0 ? '+' : '') + v.toFixed(digits) + '%'; }
-
-// 用美东时间格式化
 function toEtTimeStr(msTimestamp) {
   return new Date(msTimestamp).toLocaleString('zh-CN', {
     hour12: false, timeZone: 'America/New_York',
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
   });
 }
-
 function getEasternMinutes(msTimestamp) {
   const et = new Date(new Date(msTimestamp).toLocaleString("en-US", { timeZone: "America/New_York" }));
   return et.getHours() * 60 + et.getMinutes();
@@ -180,12 +213,6 @@ function isMarketOpen(msTimestamp) {
 function isBarCloseTime(msTimestamp, tf) {
   return getEasternMinutes(msTimestamp) % tf === 0;
 }
-function timeStrToMinutes(str) {
-  const [h, m] = str.split(':').map(Number);
-  return h * 60 + m;
-}
-
-// 确定性伪随机
 function makeRng(seed) {
   let s = seed >>> 0;
   return function () {
@@ -202,7 +229,7 @@ const d30ago = new Date(today.getTime() - 30 * 24 * 3600 * 1000);
 document.getElementById('endDate').value = today.toISOString().split('T')[0];
 document.getElementById('startDate').value = d30ago.toISOString().split('T')[0];
 
-document.querySelectorAll('.preset-btn').forEach(btn => {
+document.querySelectorAll('.preset-btn[data-days]').forEach(btn => {
   btn.addEventListener('click', () => {
     const days = parseInt(btn.dataset.days);
     const end = new Date();
@@ -212,10 +239,82 @@ document.querySelectorAll('.preset-btn').forEach(btn => {
   });
 });
 
+// ── 参数组合快捷按钮 ──
+function setParam(id, val) { document.getElementById(id).value = val; }
+function getParam(id) { return document.getElementById(id).value; }
+
+document.getElementById('presetCurrent').addEventListener('click', () => {
+  setParam('p_trailRetreat', '1.0');
+  setParam('p_fixedTP', '0');
+  setParam('p_partialTP', '2.0');
+  logPreset('已应用：当前设置（跟踪回撤 1.0%，部分止盈 2.0%）');
+});
+
+document.getElementById('presetTrail15').addEventListener('click', () => {
+  setParam('p_trailRetreat', '1.5');
+  setParam('p_fixedTP', '0');
+  logPreset('已应用：跟踪回撤 1.5%');
+});
+
+document.getElementById('presetTrail20').addEventListener('click', () => {
+  setParam('p_trailRetreat', '2.0');
+  setParam('p_fixedTP', '0');
+  logPreset('已应用：跟踪回撤 2.0%');
+});
+
+document.getElementById('presetFixedTP').addEventListener('click', () => {
+  setParam('p_trailRetreat', '0');
+  setParam('p_fixedTP', '2.5');
+  logPreset('已应用：禁用跟踪，部分止盈后剩余仓位用固定 2.5% 止盈');
+});
+
+document.getElementById('presetCombo').addEventListener('click', () => {
+  setParam('p_trailRetreat', '1.5');
+  setParam('p_fixedTP', '0');
+  setParam('p_partialTP', '2.0');
+  setSelectedSymbols(['META', 'TSLA']);
+  logPreset('已应用推荐组合：META + TSLA + 跟踪回撤 1.5% + 部分止盈 2.0%');
+});
+
+// ── 标的组合快捷按钮 ──
+document.getElementById('symAll').addEventListener('click', () => {
+  setSelectedSymbols(['TSLA', 'AAPL', 'GOOGL', 'NVDA', 'META']);
+});
+document.getElementById('symMetaTsla').addEventListener('click', () => {
+  setSelectedSymbols(['META', 'TSLA']);
+});
+document.getElementById('symMetaTslaAapl').addEventListener('click', () => {
+  setSelectedSymbols(['META', 'TSLA', 'AAPL']);
+});
+document.getElementById('symTop3').addEventListener('click', () => {
+  setSelectedSymbols(['META', 'TSLA', 'NVDA']);
+});
+
+// ── 种子按钮 ──
+document.getElementById('seedRandom').addEventListener('click', () => {
+  const s = Math.floor(Math.random() * 100000);
+  setParam('p_seed', s);
+  logPreset(`已设置随机种子：${s}`);
+});
+document.getElementById('seed42').addEventListener('click', () => setParam('p_seed', '42'));
+document.getElementById('seed123').addEventListener('click', () => setParam('p_seed', '123'));
+document.getElementById('seed999').addEventListener('click', () => setParam('p_seed', '999'));
+
+function logPreset(msg) {
+  const el = document.getElementById('progressText');
+  el.textContent = msg;
+  document.getElementById('progress').style.display = 'block';
+  setTimeout(() => {
+    if (document.getElementById('progress').style.display !== 'none') {
+      document.getElementById('progress').style.display = 'none';
+    }
+  }, 2000);
+}
+
 document.getElementById('btnRun').addEventListener('click', runFullBacktest);
 
 // ═══════════════════════════════════════════════
-// 数据拉取（含分页）
+// 数据拉取
 // ═══════════════════════════════════════════════
 async function fetchAllBars(symbol, tf, startISO, endISO, onProgress) {
   const tfMap = { 1: '1Min', 5: '5Min' };
@@ -250,24 +349,14 @@ async function fetchAllBars(symbol, tf, startISO, endISO, onProgress) {
 // ═══════════════════════════════════════════════
 // 回测核心
 // ═══════════════════════════════════════════════
-
-/**
- * 主回测函数
- * @param {Object} dataMap  {symbol: [bars]}
- * @param {Object} marketBars  市场状态参考K线
- * @param {Object} params  策略参数
- * @returns {Object}  回测结果
- */
 function backtest(dataMap, marketBars, params) {
   const symbols = Object.keys(dataMap).filter(s => dataMap[s] && dataMap[s].length > 0);
   if (symbols.length === 0) return null;
 
   const rng = makeRng(params.seed);
 
-  // 预计算每只股票的 ATR 和均量
-  const atrCache = {};  // {symbol: [atrPct]}
-  const volMaCache = {};
-  const trendCache = {};  // {symbol: [bool]} 15分钟趋势
+  // 预计算 ATR / 均量 / 趋势
+  const atrCache = {}, volMaCache = {}, trendCache = {};
   for (const sym of symbols) {
     const bars = dataMap[sym];
     atrCache[sym] = bars.map((_, i) => {
@@ -293,13 +382,9 @@ function backtest(dataMap, marketBars, params) {
     });
   }
 
-  // 市场状态：SPY 5分钟，30根滑动均值对比
-  // 每隔一段时间重新计算一次（或按日期）
-  let marketState = { isBull: false, loaded: false };
-
+  let marketState = { isBull: false, loaded: false, lastUpdate: 0 };
   function computeMarketStateAtTime(msTs) {
     if (!marketBars || marketBars.length === 0) return { isBull: false, loaded: true };
-    // 找到该时间之前最近的 30 根 K 线
     let idx = -1;
     for (let i = marketBars.length - 1; i >= 0; i--) {
       if (marketBars[i].time <= msTs) { idx = i; break; }
@@ -309,38 +394,31 @@ function backtest(dataMap, marketBars, params) {
     const prev = marketBars.slice(idx - FIXED_PARAMS.MA_WINDOW * 2 + 1, idx - FIXED_PARAMS.MA_WINDOW + 1);
     const rAvg = recent.reduce((s, b) => s + b.close, 0) / recent.length;
     const pAvg = prev.reduce((s, b) => s + b.close, 0) / prev.length;
-    return { isBull: rAvg > pAvg, loaded: true, spyPrice: rAvg, spyMa: pAvg };
+    return { isBull: rAvg > pAvg, loaded: true };
   }
 
-  // 状态
   let cash = params.capital;
-  const positions = [];  // {symbol, qty, entryPrice, entryTime, highPrice, atrPct, entryStopLossPct, partialTP, added, entryIdx}
-  const trades = [];     // 已平仓交易
-  const equityCurve = [];  // {time, value}
-  const dailyTradeCount = {};       // {symbol: count}
-  const dailySymbolRealizedPnl = {}; // {symbol: pct}
+  const positions = [];
+  const trades = [];
+  const equityCurve = [];
+  const dailyTradeCount = {};
+  const dailySymbolRealizedPnl = {};
   let dailyAccountRealizedPnl = 0;
   let circuitBroken = false;
   let currentDate = null;
   let maxEquity = params.capital;
   let maxDrawdown = 0;
+  const dailyEquity = {};
 
-  // 每日统计（用于计算夏普比率）
-  const dailyEquity = {};  // {dateStr: 收盘时的equity}
-
-  // 构建事件流
   const allEvents = [];
   for (const sym of symbols) {
-    dataMap[sym].forEach((bar, idx) => {
-      allEvents.push({ symbol: sym, idx, ...bar });
-    });
+    dataMap[sym].forEach((bar, idx) => allEvents.push({ symbol: sym, idx, ...bar }));
   }
   allEvents.sort((a, b) => a.time - b.time || a.symbol.localeCompare(b.symbol));
 
   const currentIdx = {};
   for (const sym of symbols) currentIdx[sym] = -1;
 
-  // 每处理一个事件的时间戳，尝试评估入场
   let lastEvaluatedTime = -1;
 
   for (let ei = 0; ei < allEvents.length; ei++) {
@@ -350,11 +428,14 @@ function backtest(dataMap, marketBars, params) {
     const msTs = evt.time;
     const etDateStr = getEasternDateStr(msTs);
 
-    // 日期切换
     if (etDateStr !== currentDate) {
-      // 记录前一日收盘权益
       if (currentDate) {
-        const posValue = positions.reduce((s, p) => s + p.qty * (dataMap[p.symbol][Math.min(p.entryIdx, dataMap[p.symbol].length-1)]?.close || p.entryPrice), 0);
+        const posValue = positions.reduce((s, p) => {
+          const bars = dataMap[p.symbol];
+          const idx = currentIdx[p.symbol];
+          if (idx >= 0 && bars[idx]) return s + p.qty * bars[idx].close;
+          return s + p.qty * p.entryPrice;
+        }, 0);
         dailyEquity[currentDate] = cash + posValue;
       }
       currentDate = etDateStr;
@@ -364,13 +445,12 @@ function backtest(dataMap, marketBars, params) {
       circuitBroken = false;
     }
 
-    // 更新市场状态（每 30 分钟一次，或用时间差判断）
-    if (msTs - (marketState.lastUpdate || 0) >= 30 * 60 * 1000) {
+    if (msTs - marketState.lastUpdate >= 30 * 60 * 1000) {
       marketState = computeMarketStateAtTime(msTs);
       marketState.lastUpdate = msTs;
     }
 
-    // ── 检查该标的的持仓出场 ──
+    // ── 持仓出场检查 ──
     for (let pi = positions.length - 1; pi >= 0; pi--) {
       const pos = positions[pi];
       if (pos.symbol !== sym) continue;
@@ -383,8 +463,6 @@ function backtest(dataMap, marketBars, params) {
       const highPrice = pos.highPrice;
 
       let closed = false;
-      let exitReason = null;
-      let exitPrice = null;
 
       // 1) 部分止盈
       if (!pos.partialTP && pnlPct >= params.partialTP) {
@@ -396,21 +474,34 @@ function backtest(dataMap, marketBars, params) {
         const realizedCost = halfQty * pos.entryPrice;
         pos.qty -= halfQty;
         pos.partialTP = true;
-        pos.entryStopLossPct = pos.entryStopLossPct; // 保持
-        // 记录部分止盈交易
         trades.push({
           symbol: sym, qty: halfQty, entryPrice: pos.entryPrice, exitPrice: sellPrice,
           entryTime: pos.entryTime, exitTime: msTs, pnl: realizedPnl,
           pnlPct: realizedCost > 0 ? (realizedPnl / realizedCost) * 100 : 0,
           reason: '部分止盈', entryAtrPct: pos.atrPct
         });
-        dailySymbolRealizedPnl[sym] = (dailySymbolRealizedPnl[sym] || 0);
       }
 
-      // 2) 跟踪止盈（部分止盈后）
+      // 2) 部分止盈后的剩余仓位：固定止盈或跟踪止盈
       if (pos.partialTP && pos.qty > 0.0001) {
-        const trailPrice = highPrice * (1 - params.trailRetreat / 100);
-        if (price <= trailPrice) {
+        let exit = false;
+        let exitLabel = null;
+
+        // 优先检查固定止盈（如果设置了 fixedTP > 0）
+        if (params.fixedTP > 0 && pnlPct >= params.fixedTP) {
+          exit = true;
+          exitLabel = '固定止盈';
+        }
+        // 否则检查跟踪止盈（如果 trailRetreat > 0）
+        else if (params.trailRetreat > 0) {
+          const trailPrice = highPrice * (1 - params.trailRetreat / 100);
+          if (price <= trailPrice) {
+            exit = true;
+            exitLabel = '跟踪止盈';
+          }
+        }
+
+        if (exit) {
           const slip = getSlippage(sym, params);
           const sellPrice = price * (1 - slip);
           cash += pos.qty * sellPrice;
@@ -420,9 +511,8 @@ function backtest(dataMap, marketBars, params) {
             symbol: sym, qty: pos.qty, entryPrice: pos.entryPrice, exitPrice: sellPrice,
             entryTime: pos.entryTime, exitTime: msTs, pnl: realizedPnl,
             pnlPct: realizedCost > 0 ? (realizedPnl / realizedCost) * 100 : 0,
-            reason: '跟踪止盈', entryAtrPct: pos.atrPct
+            reason: exitLabel, entryAtrPct: pos.atrPct
           });
-          dailySymbolRealizedPnl[sym] = (dailySymbolRealizedPnl[sym] || 0);
           dailyAccountRealizedPnl += (realizedPnl / params.capital) * 100;
           dailyTradeCount[sym] = (dailyTradeCount[sym] || 0) + 1;
           positions.splice(pi, 1);
@@ -446,7 +536,6 @@ function backtest(dataMap, marketBars, params) {
             pnlPct: realizedCost > 0 ? (realizedPnl / realizedCost) * 100 : 0,
             reason: stopInfo.stage, entryAtrPct: pos.atrPct
           });
-          dailySymbolRealizedPnl[sym] = (dailySymbolRealizedPnl[sym] || 0) + (realizedCost > 0 ? (realizedPnl / realizedCost) * 100 : 0);
           dailyAccountRealizedPnl += (realizedPnl / params.capital) * 100;
           dailyTradeCount[sym] = (dailyTradeCount[sym] || 0) + 1;
           positions.splice(pi, 1);
@@ -455,7 +544,7 @@ function backtest(dataMap, marketBars, params) {
         }
       }
 
-      // 4) 时间止损（仅浮亏）
+      // 4) 时间止损
       if (!closed) {
         const holdMin = (msTs - pos.entryTime) / 60000;
         if (holdMin >= params.timeStop && pnlPct < FIXED_PARAMS.TIME_STOP_MAX_PNL) {
@@ -470,7 +559,6 @@ function backtest(dataMap, marketBars, params) {
             pnlPct: realizedCost > 0 ? (realizedPnl / realizedCost) * 100 : 0,
             reason: '时间止损', entryAtrPct: pos.atrPct
           });
-          dailySymbolRealizedPnl[sym] = (dailySymbolRealizedPnl[sym] || 0) + (realizedCost > 0 ? (realizedPnl / realizedCost) * 100 : 0);
           dailyAccountRealizedPnl += (realizedPnl / params.capital) * 100;
           dailyTradeCount[sym] = (dailyTradeCount[sym] || 0) + 1;
           positions.splice(pi, 1);
@@ -485,8 +573,7 @@ function backtest(dataMap, marketBars, params) {
         const totalEquityNow = cash + currentPosValue;
         const currentExposurePct = (currentPosValue / totalEquityNow) * 100;
         if (currentExposurePct < params.maxExposure) {
-          const addSize = params.addSize; // 简化：不区分综合分
-          const addValue = totalEquityNow * (addSize / 100);
+          const addValue = totalEquityNow * (params.addSize / 100);
           const newExposurePct = ((currentPosValue + addValue) / totalEquityNow) * 100;
           if (newExposurePct <= params.maxExposure && cash >= addValue) {
             const slip = getSlippage(sym, params);
@@ -503,7 +590,7 @@ function backtest(dataMap, marketBars, params) {
       }
     }
 
-    // 记录权益曲线（每个事件都记录会很密集，改为每根新 K 线记录一次）
+    // 记录权益曲线
     if (ei === 0 || allEvents[ei - 1].time !== msTs) {
       const posValue = positions.reduce((s, p) => {
         const bars = dataMap[p.symbol];
@@ -518,19 +605,15 @@ function backtest(dataMap, marketBars, params) {
       if (dd > maxDrawdown) maxDrawdown = dd;
     }
 
-    // ── 入场评估（每个时间戳只评估一次）──
+    // ── 入场评估 ──
     if (msTs === lastEvaluatedTime) continue;
     lastEvaluatedTime = msTs;
 
-    // 只在 K 线收盘时评估
     if (!isBarCloseTime(msTs, params.tf)) continue;
-    // 只在盘中
     if (!isMarketOpen(msTs)) continue;
-    // 熔断
     if (circuitBroken) continue;
-    // 持仓数量
     if (positions.length >= params.maxPositions) continue;
-    // 总敞口
+
     const posValue = positions.reduce((s, p) => {
       const bars = dataMap[p.symbol];
       const idx = currentIdx[p.symbol];
@@ -541,7 +624,6 @@ function backtest(dataMap, marketBars, params) {
     const totalExposurePct = (posValue / totalEquityNow) * 100;
     if (totalExposurePct >= params.maxTotal) continue;
 
-    // 收盘强平：如果超过强平时间，则先平仓（此处放在入场前）
     const m = getEasternMinutes(msTs);
     if (m >= params.forceClose && positions.length > 0) {
       for (let pi = positions.length - 1; pi >= 0; pi--) {
@@ -561,7 +643,6 @@ function backtest(dataMap, marketBars, params) {
           pnlPct: realizedCost > 0 ? (realizedPnl / realizedCost) * 100 : 0,
           reason: '收盘强平', entryAtrPct: pos.atrPct
         });
-        dailySymbolRealizedPnl[pos.symbol] = (dailySymbolRealizedPnl[pos.symbol] || 0) + (realizedCost > 0 ? (realizedPnl / realizedCost) * 100 : 0);
         dailyAccountRealizedPnl += (realizedPnl / params.capital) * 100;
         dailyTradeCount[pos.symbol] = (dailyTradeCount[pos.symbol] || 0) + 1;
         positions.splice(pi, 1);
@@ -569,14 +650,13 @@ function backtest(dataMap, marketBars, params) {
       continue;
     }
 
-    // 分档交易次数
     const heldSymbols = new Set(positions.map(p => p.symbol));
     const candidates = [];
 
     for (const s of symbols) {
       if (heldSymbols.has(s)) continue;
 
-      const maxTrades = getMaxDailyTrades(dailySymbolRealizedPnl[s] || 0, params.circuit);
+      const maxTrades = getMaxDailyTrades(dailySymbolRealizedPnl[s] || 0);
       if ((dailyTradeCount[s] || 0) >= maxTrades) continue;
 
       const idx = currentIdx[s];
@@ -584,30 +664,24 @@ function backtest(dataMap, marketBars, params) {
       const bars = dataMap[s];
       const bar = bars[idx];
 
-      // K 线振幅
       const barRange = ((bar.high - bar.low) / bar.close) * 100;
       if (barRange > 1.0) continue;
 
-      // ATR
       const atrPct = atrCache[s][idx];
       if (atrPct === null || atrPct > params.atrThreshold) continue;
 
-      // 动量
       const pastPrice = bars[idx - 3].close;
       const momentumPct = ((bar.close - pastPrice) / pastPrice) * 100;
       if (momentumPct < params.momentum) continue;
 
-      // 趋势确认
       if (!trendCache[s][idx]) continue;
 
-      // 新闻模拟：每个 (symbol, time) 生成一次
-      const newsKey = `${s}_${msTs}`;
       const newsScore = simulateNews(s, msTs, rng, params);
       if (!newsScore.bullish) continue;
 
       const momentumScore = Math.min(momentumPct / 5, 1);
       const composite = newsScore.score * 0.6 + momentumScore * 0.4;
-      candidates.push({ symbol: s, price: bar.close, composite, atrPct, momentumPct, newsScore: newsScore.score });
+      candidates.push({ symbol: s, price: bar.close, composite, atrPct, momentumPct });
     }
 
     if (candidates.length === 0) continue;
@@ -619,15 +693,13 @@ function backtest(dataMap, marketBars, params) {
     for (const c of candidates) {
       if (opened >= remainingSlots) break;
 
-      const baseSize = params.baseSize; // 新闻降级在回测中略（简化处理）
-      const positionValue = totalEquityNow * (baseSize / 100);
+      const positionValue = totalEquityNow * (params.baseSize / 100);
       if ((posValue + positionValue) / totalEquityNow * 100 > params.maxTotal) continue;
 
       const slip = getSlippage(c.symbol, params);
       const buyPrice = c.price * (1 + slip);
       const qty = positionValue / buyPrice;
 
-      // 动态止损
       const isBull = marketState.isBull;
       const mult = isBull ? FIXED_PARAMS.BULL_ATR_MULT : FIXED_PARAMS.BEAR_ATR_MULT;
       const minStop = isBull ? FIXED_PARAMS.BULL_MIN_STOP : FIXED_PARAMS.BEAR_MIN_STOP;
@@ -643,7 +715,6 @@ function backtest(dataMap, marketBars, params) {
       opened++;
     }
 
-    // 熔断检查
     if (!circuitBroken && dailyAccountRealizedPnl <= -params.circuit) {
       circuitBroken = true;
     }
@@ -667,9 +738,7 @@ function backtest(dataMap, marketBars, params) {
   }
 
   const finalEquity = cash;
-  // 计算绩效
   const stats = computeStats(trades, equityCurve, params.capital, finalEquity, dailyEquity, maxDrawdown, params);
-
   return { trades, equityCurve, stats };
 }
 
@@ -685,7 +754,7 @@ function getEffectiveStopPrice(entryPrice, currentPrice, highPrice, stopLossPct,
   return { price: Math.max(entryPrice * 1.01, highPrice * (1 - FIXED_PARAMS.TRAILING_STOP_PCT)), stage: '锁定+1%+跟踪' };
 }
 
-function getMaxDailyTrades(pnlPct, circuitPct) {
+function getMaxDailyTrades(pnlPct) {
   if (pnlPct < -1) return 0;
   if (pnlPct < 0) return 1;
   if (pnlPct <= 1) return 3;
@@ -693,7 +762,6 @@ function getMaxDailyTrades(pnlPct, circuitPct) {
 }
 
 function simulateNews(symbol, msTs, rng, params) {
-  // 用 (symbol, 时间窗) 生成确定性伪随机
   const windowKey = Math.floor(msTs / (15 * 60 * 1000));
   const hashSeed = hashStr(symbol + '_' + windowKey);
   const r = makeRng(hashSeed + params.seed)();
@@ -708,9 +776,7 @@ function simulateNews(symbol, msTs, rng, params) {
 
 function hashStr(s) {
   let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  }
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
   return h;
 }
 
@@ -729,13 +795,11 @@ function computeStats(trades, equityCurve, initialCapital, finalEquity, dailyEqu
   const profitFactor = avgLoss !== 0 ? Math.abs(avgWin / avgLoss) : 0;
   const avgPnl = trades.length > 0 ? trades.reduce((s, t) => s + t.pnl, 0) / trades.length : 0;
 
-  // 年化（按交易日数）
   const dates = Object.keys(dailyEquity).sort();
   const tradingDays = dates.length > 0 ? dates.length : Math.max(1, equityCurve.length / 78);
   const years = tradingDays / 252;
   const annualizedReturnPct = years > 0 ? (Math.pow(finalEquity / initialCapital, 1 / years) - 1) * 100 : 0;
 
-  // 夏普比率：日收益序列
   const dailyReturns = [];
   let prevEquity = initialCapital;
   for (const d of dates) {
@@ -753,7 +817,6 @@ function computeStats(trades, equityCurve, initialCapital, finalEquity, dailyEqu
 
   const calmar = maxDrawdown > 0 ? annualizedReturnPct / maxDrawdown : 0;
 
-  // 按出场原因统计
   const byReason = {};
   trades.forEach(t => {
     if (!byReason[t.reason]) byReason[t.reason] = { count: 0, pnl: 0, wins: 0 };
@@ -762,7 +825,6 @@ function computeStats(trades, equityCurve, initialCapital, finalEquity, dailyEqu
     if (t.pnl > 0) byReason[t.reason].wins++;
   });
 
-  // 按标的统计
   const bySymbol = {};
   trades.forEach(t => {
     if (!bySymbol[t.symbol]) bySymbol[t.symbol] = { count: 0, pnl: 0, wins: 0 };
@@ -771,7 +833,6 @@ function computeStats(trades, equityCurve, initialCapital, finalEquity, dailyEqu
     if (t.pnl > 0) bySymbol[t.symbol].wins++;
   });
 
-  // 平均持仓时间（分钟）
   const avgHoldMin = trades.length > 0
     ? trades.reduce((s, t) => s + (t.exitTime - t.entryTime) / 60000, 0) / trades.length
     : 0;
@@ -799,6 +860,7 @@ async function runFullBacktest() {
     baseSize: parseFloat(document.getElementById('p_baseSize').value),
     partialTP: parseFloat(document.getElementById('p_partialTP').value),
     trailRetreat: parseFloat(document.getElementById('p_trailRetreat').value),
+    fixedTP: parseFloat(document.getElementById('p_fixedTP').value),
     addTrigger: parseFloat(document.getElementById('p_addTrigger').value),
     addSize: parseFloat(document.getElementById('p_addSize').value),
     maxExposure: parseFloat(document.getElementById('p_maxExposure').value),
@@ -826,7 +888,6 @@ async function runFullBacktest() {
     const startISO = new Date(startDate + 'T00:00:00Z').toISOString();
     const endISO = new Date(new Date(endDate).getTime() + 24*3600*1000).toISOString();
 
-    // 拉取数据
     const dataMap = {};
     const totalTasks = symbols.length + 1;
     let done = 0;
@@ -871,17 +932,15 @@ async function runFullBacktest() {
 }
 
 // ═══════════════════════════════════════════════
-// 渲染结果
+// 渲染
 // ═══════════════════════════════════════════════
 function renderResult(result, params, symbols, dataMap) {
   const s = result.stats;
   const area = document.getElementById('resultArea');
-
   const cls = v => v >= 0 ? 'profit' : 'loss';
 
   let html = '';
 
-  // ── 绩效卡片 ──
   html += `<h2>📈 整体绩效</h2>`;
   html += `<div class="stats-grid">
     <div class="stat-card"><div class="stat-label">最终权益</div><div class="stat-value">${'$' + s.finalEquity.toFixed(2)}</div></div>
@@ -898,11 +957,24 @@ function renderResult(result, params, symbols, dataMap) {
     <div class="stat-card"><div class="stat-label">平均持仓</div><div class="stat-value">${s.avgHoldMin.toFixed(0)} 分钟</div></div>
   </div>`;
 
-  // ── 图表 ──
+  // 当前配置摘要
+  const cfgLines = [];
+  cfgLines.push(`标的：${symbols.join('、')}`);
+  cfgLines.push(`部分止盈：${params.partialTP}%`);
+  if (params.fixedTP > 0) cfgLines.push(`固定止盈：${params.fixedTP}%（已禁用跟踪）`);
+  if (params.trailRetreat > 0) cfgLines.push(`跟踪回撤：${params.trailRetreat}%`);
+  cfgLines.push(`加仓触发：${params.addTrigger}% / 加仓比例 ${params.addSize}%`);
+  cfgLines.push(`最大持仓：${params.maxPositions} 只 / 单只上限 ${params.maxExposure}% / 总敞口 ${params.maxTotal}%`);
+  cfgLines.push(`动量阈值：${params.momentum}% / ATR 阈值 ${params.atrThreshold}%`);
+  cfgLines.push(`时间止损：${params.timeStop} 分钟 / 熔断 ${params.circuit}%`);
+  cfgLines.push(`种子：${params.seed}`);
+  html += `<div class="hint" style="margin-top:10px; padding:8px; background:#0d1117; border:1px solid #30363d; border-radius:6px;">
+    <strong>当前配置：</strong>${cfgLines.join(' | ')}
+  </div>`;
+
   html += `<h2>📉 权益曲线与价格</h2>`;
   html += `<div class="chart-wrap"><div id="equityChart"></div><div id="priceChart"></div></div>`;
 
-  // ── 按标的统计 ──
   html += `<h2>📊 按标的统计</h2><table>
     <thead><tr><th>标的</th><th>交易次数</th><th>胜率</th><th>总盈亏</th></tr></thead><tbody>`;
   Object.entries(s.bySymbol).sort((a, b) => b[1].pnl - a[1].pnl).forEach(([sym, d]) => {
@@ -915,11 +987,10 @@ function renderResult(result, params, symbols, dataMap) {
   });
   html += `</tbody></table>`;
 
-  // ── 按出场原因统计 ──
   html += `<h2>🚪 按出场原因统计</h2><table>
     <thead><tr><th>原因</th><th>次数</th><th>胜率</th><th>总盈亏</th></tr></thead><tbody>`;
   Object.entries(s.byReason).sort((a, b) => b[1].count - a[1].count).forEach(([r, d]) => {
-    const tagCls = r.includes('止损') ? 'tag-stop' : r.includes('跟踪') ? 'tag-trail' : r.includes('部分') ? 'tag-tp' : r.includes('时间') ? 'tag-time' : r.includes('新闻') || r.includes('反向') ? 'tag-news' : 'tag-eod';
+    const tagCls = r.includes('止损') ? 'tag-stop' : r.includes('跟踪') ? 'tag-trail' : r.includes('部分') || r.includes('固定') ? 'tag-tp' : r.includes('时间') ? 'tag-time' : r.includes('新闻') || r.includes('反向') ? 'tag-news' : 'tag-eod';
     html += `<tr>
       <td><span class="tag ${tagCls}">${r}</span></td>
       <td>${d.count}</td>
@@ -929,17 +1000,15 @@ function renderResult(result, params, symbols, dataMap) {
   });
   html += `</tbody></table>`;
 
-  // ── 交易明细 ──
   html += `<h2>📋 交易明细（最近 50 笔）</h2><table>
-    <thead><tr><th>入场时间</th><th>出场时间</th><th>标的</th><th>方向</th><th>股数</th><th>入场价</th><th>出场价</th><th>盈亏</th><th>盈亏%</th><th>出场原因</th></tr></thead><tbody>`;
+    <thead><tr><th>入场时间</th><th>出场时间</th><th>标的</th><th>股数</th><th>入场价</th><th>出场价</th><th>盈亏</th><th>盈亏%</th><th>出场原因</th></tr></thead><tbody>`;
   const recent = result.trades.slice(-50).reverse();
   recent.forEach(t => {
-    const reasonCls = t.reason.includes('止损') ? 'tag-stop' : t.reason.includes('跟踪') ? 'tag-trail' : t.reason.includes('部分') ? 'tag-tp' : t.reason.includes('时间') ? 'tag-time' : 'tag-eod';
+    const reasonCls = t.reason.includes('止损') ? 'tag-stop' : t.reason.includes('跟踪') ? 'tag-trail' : t.reason.includes('部分') || t.reason.includes('固定') ? 'tag-tp' : t.reason.includes('时间') ? 'tag-time' : 'tag-eod';
     html += `<tr>
       <td>${toEtTimeStr(t.entryTime)}</td>
       <td>${toEtTimeStr(t.exitTime)}</td>
       <td><strong>${t.symbol}</strong></td>
-      <td>买入</td>
       <td>${t.qty.toFixed(4)}</td>
       <td>$${t.entryPrice.toFixed(2)}</td>
       <td>$${t.exitPrice.toFixed(2)}</td>
@@ -952,21 +1021,19 @@ function renderResult(result, params, symbols, dataMap) {
 
   html += `<div class="hint">
     <strong>说明：</strong><br>
-    1. 新闻情绪用随机模拟（20% 看涨概率 + 10% 看跌概率），不反映真实新闻。因此回测结果主要反映<strong>技术面和风控逻辑</strong>的表现。<br>
+    1. 新闻情绪用随机模拟（25% 看涨概率 + 10% 看跌概率），不反映真实新闻。<br>
     2. 权益曲线为事件时间点上的账户总权益（现金 + 持仓市值）。<br>
     3. 夏普比率基于日收益序列计算，年化乘以 √252。<br>
     4. 回测剔除了盘后入场，允许盘后出场，与实盘一致。<br>
-    5. 数据来源：Alpaca IEX，可能存在个别缺失时段。
+    5. 数据来源：Alpaca IEX，可能存在个别缺失时段。<br>
+    6. 固定止盈 > 0 时，部分止盈后的剩余仓位用固定止盈；跟踪回撤 = 0 时禁用跟踪止盈。
   </div>`;
 
   area.innerHTML = html;
-
-  // 渲染图表
   requestAnimationFrame(() => renderCharts(result, symbols, dataMap));
 }
 
 function renderCharts(result, symbols, dataMap) {
-  // ── 权益曲线 ──
   const eqEl = document.getElementById('equityChart');
   if (!eqEl) return;
   const eqChart = LightweightCharts.createChart(eqEl, {
@@ -979,7 +1046,6 @@ function renderCharts(result, symbols, dataMap) {
   eqSeries.setData(result.equityCurve.map(p => ({ time: p.time, value: p.value })));
   eqChart.timeScale().fitContent();
 
-  // 交易标记
   const markers = [];
   for (const t of result.trades) {
     if (t.reason === '部分止盈') continue;
@@ -995,7 +1061,6 @@ function renderCharts(result, symbols, dataMap) {
   });
   ro.observe(eqEl);
 
-  // ── 价格图（用第一个标的价格 + 交易标记）──
   const prEl = document.getElementById('priceChart');
   if (!prEl) return;
   const prChart = LightweightCharts.createChart(prEl, {
@@ -1008,7 +1073,6 @@ function renderCharts(result, symbols, dataMap) {
   const firstSym = symbols[0];
   const firstBars = dataMap[firstSym];
   prSeries.setData(firstBars.map(b => ({ time: Math.floor(b.time / 1000), value: b.close })));
-
   prChart.timeScale().fitContent();
 
   const ro2 = new ResizeObserver(() => {
