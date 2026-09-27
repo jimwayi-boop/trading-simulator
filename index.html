@@ -4,28 +4,33 @@
 <meta charset="UTF-8">
 <title>股票自动交易策略A - 实盘面板</title>
 <style>
-  /* 这里保留你原有的面板样式，为简洁起见，保留核心样式 */
-  body { font-family: -apple-system, sans-serif; background: #0d1117; color: #c9d1d9; padding: 20px; }
-  .panel { max-width: 1200px; margin: 0 auto; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0d1117; color: #c9d1d9; padding: 20px; font-size: 14px; }
+  .panel { max-width: 1400px; margin: 0 auto; }
   .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-  .btn { background: #238636; color: #fff; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; }
+  h1 { font-size: 24px; color: #58a6ff; }
+  .btn { background: #238636; color: #fff; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; }
   .btn:hover { background: #2ea043; }
   .btn-danger { background: #da3633; }
   .btn-danger:hover { background: #f85149; }
+  .btn:disabled { background: #30363d; color: #8b949e; cursor: not-allowed; }
+  .status-bar { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 15px 20px; margin-bottom: 20px; display: flex; gap: 30px; flex-wrap: wrap; font-size: 14px; }
+  .status-item { display: flex; align-items: center; gap: 8px; }
+  .status-label { color: #8b949e; }
   .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
-  .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 15px; }
-  .card-label { font-size: 12px; color: #8b949e; }
-  .card-value { font-size: 24px; font-weight: bold; margin-top: 5px; }
-  .status-bar { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 15px; margin-bottom: 20px; display: flex; gap: 20px; align-items: center; }
-  .log-box { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 15px; height: 400px; overflow-y: auto; font-family: monospace; font-size: 12px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 15px 20px; }
+  .card-label { font-size: 12px; color: #8b949e; margin-bottom: 5px; }
+  .card-value { font-size: 24px; font-weight: bold; }
+  .profit { color: #3fb950; }
+  .loss { color: #f85149; }
+  .log-box { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 15px; height: 500px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6; }
   .log-line { margin-bottom: 4px; }
   .log-time { color: #8b949e; margin-right: 8px; }
   .log-info { color: #58a6ff; }
   .log-success { color: #3fb950; }
   .log-warn { color: #d29922; }
   .log-error { color: #f85149; }
-  .profit { color: #3fb950; }
-  .loss { color: #f85149; }
+  .log-trade { color: #a371f7; }
 </style>
 </head>
 <body>
@@ -34,30 +39,27 @@
     <h1>股票自动交易策略A - 实盘面板</h1>
     <div>
       <button class="btn" id="btnStart">启动策略</button>
-      <button class="btn btn-danger" id="btnStop" style="margin-left: 10px;">停止策略</button>
+      <button class="btn btn-danger" id="btnStop" style="margin-left: 10px;" disabled>停止策略</button>
     </div>
   </div>
 
-  <!-- 市场状态栏 -->
   <div class="status-bar">
-    <div><span class="card-label">市场状态：</span><span id="marketStatus">--</span></div>
-    <div><span class="card-label">数据源：</span><span id="dataSource">--</span></div>
-    <div><span class="card-label">今日盈亏：</span><span id="dailyPnl" class="profit">--</span></div>
-    <div><span class="card-label">当前持仓：</span><span id="currentPositions">--</span></div>
+    <div class="status-item"><span class="status-label">市场状态：</span><span id="marketStatus">--</span></div>
+    <div class="status-item"><span class="status-label">数据源：</span><span id="dataSource">--</span></div>
+    <div class="status-item"><span class="status-label">今日盈亏：</span><span id="dailyPnl" class="profit">--</span></div>
+    <div class="status-item"><span class="status-label">当前持仓：</span><span id="currentPositions">--</span></div>
   </div>
 
-  <!-- 资产概览 -->
   <div class="grid">
-    <div class="card"><div class="card-label">总资产</div><div class="card-value" id="totalEquity">$0.00</div></div>
-    <div class="card"><div class="card-label">可用现金</div><div class="card-value" id="cash">$0.00</div></div>
-    <div class="card"><div class="card-label">当日盈亏</div><div class="card-value" id="dailyPnlCard">$0.00</div></div>
-    <div class="card"><div class="card-label">当月盈亏</div><div class="card-value" id="monthlyPnlCard">$0.00</div></div>
+    <div class="card"><div class="card-label">总资产 (Total Equity)</div><div class="card-value" id="totalEquity">$0.00</div></div>
+    <div class="card"><div class="card-label">可用现金 (Cash)</div><div class="card-value" id="cash">$0.00</div></div>
+    <div class="card"><div class="card-label">当日盈亏 (Daily PnL)</div><div class="card-value" id="dailyPnlCard">$0.00</div></div>
+    <div class="card"><div class="card-label">当月盈亏 (Monthly PnL)</div><div class="card-value" id="monthlyPnlCard">$0.00</div></div>
   </div>
 
-  <!-- 运行日志 -->
-  <h2>实时运行日志</h2>
+  <h2 style="margin-bottom: 10px; color: #c9d1d9;">实时运行日志</h2>
   <div class="log-box" id="logBox"></div>
-  <button class="btn" id="btnExportLog" style="margin-top: 10px;">导出今日运行日志</button>
+  <button class="btn" id="btnExportLog" style="margin-top: 15px;">导出今日运行日志</button>
 </div>
 
 <script>
@@ -65,15 +67,15 @@
 // 配置区域
 // ============================================================
 const CONFIG = {
-  WORKER_URL: "https://trading-proxy.jimwayi.workers.dev",
-  VAL_TOWN_WEBHOOK_URL: "YOUR_VAL_TOWN_WEBHOOK_URL", // 替换为你的 Val Town URL
+  WORKER_URL: "https://trading-proxy.jimwayi.workers.dev", // 你的 Cloudflare Worker 代理地址
+  VAL_TOWN_WEBHOOK_URL: "", // 留空！因为你的 Val Town 是 Cron 定时任务，不接收 POST。如果需要实时通知，请改为 Val Town 的 Webhook URL。
   SYMBOLS: {
-    AUTO_TRADE: ['META', 'TSLA'], // 默认自动交易
+    AUTO_TRADE: ['META', 'TSLA'], // 自动交易
     MONITOR_ONLY: ['AAPL', 'GOOGL', 'NVDA'] // 仅监控，不自动交易
   },
   PARAMS: {
     BASE_SIZE: 5,           // 基础仓位 5%
-    PARTIAL_TP: 2.0,        // 部分止盈触发 2.0%
+    PARTIAL_TP: 2.0,        // 部分止盈 2.0%
     PARTIAL_TP_QTY: 50,     // 部分止盈卖出 50%
     FIXED_TP: 2.5,          // 固定止盈 2.5%
     MOMENTUM_THRESHOLD: 0.6, // 动量阈值 0.6%
@@ -81,12 +83,14 @@ const CONFIG = {
     MAX_POSITIONS: 3,       // 最大持仓数 3
     MAX_TOTAL_EXPOSURE: 50, // 总敞口上限 50%
     CIRCUIT_BREAKER: 1.5,   // 日内熔断 1.5%
-    FORCE_CLOSE_TIME: 950   // 收盘强平 15:50 (美东分)
+    FORCE_CLOSE_TIME: 950   // 收盘强平 15:50 (美东时间分钟数)
   }
 };
 
 let isRunning = false;
 let logHistory = [];
+let positions = []; // 当前持仓
+let account = { cash: 0, equity: 0, dailyPnl: 0, monthlyPnl: 0 };
 
 // ============================================================
 // 日志系统
@@ -116,11 +120,11 @@ function exportTodayLogs() {
 }
 
 // ============================================================
-// Val Town 通知
+// 通知机制（可选：当你有实时的 Val Town Webhook 需求时）
 // ============================================================
 async function sendValTownNotification(subject, message) {
-  if (CONFIG.VAL_TOWN_WEBHOOK_URL === "YOUR_VAL_TOWN_WEBHOOK_URL") {
-    addLog('未配置 Val Town Webhook URL，跳过通知发送。', 'warn');
+  if (!CONFIG.VAL_TOWN_WEBHOOK_URL) {
+    addLog(`[通知] Val Town URL 未配置，跳过发送: ${subject}`, 'warn');
     return;
   }
   try {
@@ -129,30 +133,137 @@ async function sendValTownNotification(subject, message) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ subject, message, timestamp: Date.now() })
     });
-    addLog(`Val Town 通知已发送: ${subject}`, 'success');
+    addLog(`[通知] 已发送: ${subject}`, 'success');
   } catch (e) {
-    addLog(`Val Town 通知发送失败: ${e.message}`, 'error');
+    addLog(`[通知] 发送失败: ${e.message}`, 'error');
   }
 }
 
 // ============================================================
-// 策略核心逻辑 (简化版，需根据你的Worker逻辑完善)
+// 工具函数
 // ============================================================
+function getEasternMinutes() {
+  const et = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+  return et.getHours() * 60 + et.getMinutes();
+}
+
+function isMarketOpen() {
+  const m = getEasternMinutes();
+  return m >= 570 && m < 960; // 9:30 - 16:00 ET
+}
+
+// ============================================================
+// 核心策略逻辑 (完整框架，对接 Worker)
+// ============================================================
+async function fetchAccountData() {
+  try {
+    // 通过你的 Worker 代理获取 Alpaca 账户信息
+    const resp = await fetch(`${CONFIG.WORKER_URL}/alpaca/v2/account`);
+    if (!resp.ok) throw new Error("获取账户信息失败");
+    const data = await resp.json();
+    account.cash = parseFloat(data.cash);
+    account.equity = parseFloat(data.equity);
+    account.dailyPnl = parseFloat(data.equity) - parseFloat(data.last_equity);
+    // 更新 UI
+    document.getElementById('totalEquity').textContent = `$${account.equity.toFixed(2)}`;
+    document.getElementById('cash').textContent = `$${account.cash.toFixed(2)}`;
+    const dailyEl = document.getElementById('dailyPnlCard');
+    dailyEl.textContent = `$${account.dailyPnl.toFixed(2)}`;
+    dailyEl.className = `card-value ${account.dailyPnl >= 0 ? 'profit' : 'loss'}`;
+    document.getElementById('dailyPnl').textContent = `$${account.dailyPnl.toFixed(2)}`;
+    document.getElementById('dailyPnl').className = account.dailyPnl >= 0 ? 'profit' : 'loss';
+  } catch (e) {
+    addLog(`获取账户信息失败: ${e.message}`, 'error');
+  }
+}
+
+async function fetchPositions() {
+  try {
+    const resp = await fetch(`${CONFIG.WORKER_URL}/alpaca/v2/positions`);
+    if (!resp.ok) throw new Error("获取持仓失败");
+    const data = await resp.json();
+    positions = data.map(p => ({
+      symbol: p.symbol,
+      qty: parseFloat(p.qty),
+      avg_entry_price: parseFloat(p.avg_entry_price),
+      current_price: parseFloat(p.current_price),
+      unrealized_pl: parseFloat(p.unrealized_pl),
+      unrealized_plpc: parseFloat(p.unrealized_plpc) * 100
+    }));
+    document.getElementById('currentPositions').textContent = positions.length > 0 ? positions.map(p => p.symbol).join(', ') : '无';
+  } catch (e) {
+    addLog(`获取持仓失败: ${e.message}`, 'error');
+  }
+}
+
 async function runStrategyLoop() {
   if (!isRunning) return;
 
   try {
-    // 1. 获取市场状态 (SPY 5分钟)
-    // 2. 获取监控标的数据 (META, TSLA 自动交易; AAPL, GOOGL, NVDA 仅获取价格)
-    // 3. 评估入场条件 (动量、ATR、新闻)
-    // 4. 检查持仓出场条件 (部分止盈、固定止盈、止损、熔断、收盘强平)
-    // 5. 执行交易 (Alpaca API)
+    // 1. 检查市场是否开盘
+    if (!isMarketOpen()) {
+      addLog('市场未开盘，等待中...', 'info');
+      setTimeout(runStrategyLoop, 60000);
+      return;
+    }
 
-    // 这里模拟运行日志
-    addLog('策略运行中，检查市场状态...', 'info');
-    
-    // 模拟通知
-    // await sendValTownNotification('策略状态更新', '今日已运行，无异常。');
+    // 2. 获取账户和持仓信息
+    await fetchAccountData();
+    await fetchPositions();
+
+    // 3. 收盘强平检查 (美东 15:50)
+    const currentETMinutes = getEasternMinutes();
+    if (currentETMinutes >= CONFIG.PARAMS.FORCE_CLOSE_TIME && positions.length > 0) {
+      addLog('触发收盘强平，正在平仓所有持仓...', 'warn');
+      for (const pos of positions) {
+        await executeOrder(pos.symbol, 'sell', pos.qty, '收盘强平');
+      }
+      positions = [];
+      document.getElementById('currentPositions').textContent = '无';
+      setTimeout(runStrategyLoop, 60000);
+      return;
+    }
+
+    // 4. 熔断检查 (基于当日已实现盈亏，这里简化处理，由 Val Town 邮件报告来汇总)
+    // 实际逻辑中，Worker 里会记录 dailyAccountRealizedPnL
+
+    // 5. 检查出场条件 (遍历持仓)
+    for (const pos of positions) {
+      const pnlPct = pos.unrealized_plpc;
+      
+      // 部分止盈 2.0%
+      if (!pos.partialTP && pnlPct >= CONFIG.PARAMS.PARTIAL_TP) {
+        const qtyToSell = Math.floor(pos.qty * (CONFIG.PARAMS.PARTIAL_TP_QTY / 100));
+        if (qtyToSell > 0) {
+          await executeOrder(pos.symbol, 'sell', qtyToSell, `部分止盈 +${pnlPct.toFixed(2)}%`);
+          pos.partialTP = true;
+        }
+      }
+      
+      // 固定止盈 2.5% (部分止盈后的剩余仓位)
+      if (pos.partialTP && pnlPct >= CONFIG.PARAMS.FIXED_TP) {
+        await executeOrder(pos.symbol, 'sell', pos.qty, `固定止盈 +${pnlPct.toFixed(2)}%`);
+        positions = positions.filter(p => p.symbol !== pos.symbol);
+      }
+      
+      // 止损 (简化，实际用ATR动态止损)
+      if (pnlPct <= -1.5) {
+        await executeOrder(pos.symbol, 'sell', pos.qty, `止损 ${pnlPct.toFixed(2)}%`);
+        positions = positions.filter(p => p.symbol !== pos.symbol);
+      }
+    }
+
+    // 6. 检查入场条件 (仅针对 AUTO_TRADE 标的)
+    if (positions.length < CONFIG.PARAMS.MAX_POSITIONS) {
+      for (const sym of CONFIG.SYMBOLS.AUTO_TRADE) {
+        if (positions.find(p => p.symbol === sym)) continue; // 已持仓
+        
+        // 这里需要拉取行情数据，计算动量、ATR、新闻等
+        // 模拟一个入场信号检查
+        // const signal = await checkEntrySignal(sym);
+        // if (signal.bullish) { await executeOrder(sym, 'buy', qty, '动量+新闻入场'); }
+      }
+    }
 
   } catch (e) {
     addLog(`策略运行出错: ${e.message}`, 'error');
@@ -162,13 +273,38 @@ async function runStrategyLoop() {
   setTimeout(runStrategyLoop, 60000);
 }
 
+async function executeOrder(symbol, side, qty, reason) {
+  try {
+    const resp = await fetch(`${CONFIG.WORKER_URL}/alpaca/v2/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        symbol: symbol,
+        qty: qty.toString(),
+        side: side,
+        type: 'market',
+        time_in_force: 'day'
+      })
+    });
+    if (!resp.ok) throw new Error(`下单失败: ${resp.status}`);
+    const data = await resp.json();
+    addLog(`[成交] ${side.toUpperCase()} ${symbol} x${qty} @市价 (${reason})`, 'trade');
+    await sendValTownNotification(`交易成交 - ${symbol}`, `${side} ${qty} 股，原因：${reason}`);
+  } catch (e) {
+    addLog(`下单失败: ${e.message}`, 'error');
+  }
+}
+
 // ============================================================
 // UI 事件绑定
 // ============================================================
 document.getElementById('btnStart').addEventListener('click', () => {
   if (isRunning) return;
   isRunning = true;
+  document.getElementById('btnStart').disabled = true;
+  document.getElementById('btnStop').disabled = false;
   addLog('策略已启动。自动交易标的：META, TSLA。监控标的：AAPL, GOOGL, NVDA。', 'success');
+  addLog('定型参数：固定止盈 2.5%，部分止盈 2.0%，最大持仓 3只，总敞口 50%。', 'info');
   sendValTownNotification('策略启动', '股票自动交易策略A已启动。');
   runStrategyLoop();
 });
@@ -176,6 +312,8 @@ document.getElementById('btnStart').addEventListener('click', () => {
 document.getElementById('btnStop').addEventListener('click', () => {
   if (!isRunning) return;
   isRunning = false;
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('btnStop').disabled = true;
   addLog('策略已手动停止。', 'warn');
   sendValTownNotification('策略停止', '股票自动交易策略A已手动停止。');
 });
