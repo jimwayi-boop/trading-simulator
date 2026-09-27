@@ -6,186 +6,73 @@
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: #0d1117; color: #c9d1d9; padding: 14px; font-size: 13px;
-  }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0d1117; color: #c9d1d9; padding: 14px; font-size: 13px; }
   .container { max-width: 1700px; margin: 0 auto; }
   h1 { font-size: 20px; margin-bottom: 8px; }
   h2 { font-size: 14px; margin: 18px 0 8px 0; color: #58a6ff; text-transform: uppercase; letter-spacing: .5px; }
   .desc { font-size: 12px; color: #8b949e; margin-bottom: 12px; line-height: 1.6; }
-
-  .controls {
-    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-    padding: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
-  }
+  .controls { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
   .controls label { font-size: 12px; color: #8b949e; }
-  .controls input[type="date"], .controls input[type="number"] {
-    padding: 5px 7px; background: #0d1117; border: 1px solid #30363d;
-    border-radius: 5px; color: #c9d1d9; font-size: 12px; width: 110px;
-  }
+  .controls input[type="date"], .controls input[type="number"] { padding: 5px 7px; background: #0d1117; border: 1px solid #30363d; border-radius: 5px; color: #c9d1d9; font-size: 12px; width: 110px; }
   .controls input[type="date"] { width: 130px; }
   .controls .symbols-group { display: flex; gap: 8px; flex-wrap: wrap; }
-  .controls .symbols-group label {
-    display: flex; align-items: center; gap: 3px;
-    font-size: 13px; color: #c9d1d9; margin: 0;
-  }
-  .controls button {
-    padding: 7px 16px; background: #238636; color: #fff; border: none;
-    border-radius: 5px; font-size: 13px; font-weight: 600; cursor: pointer;
-  }
+  .controls .symbols-group label { display: flex; align-items: center; gap: 3px; font-size: 13px; color: #c9d1d9; margin: 0; }
+  .controls button { padding: 7px 16px; background: #238636; color: #fff; border: none; border-radius: 5px; font-size: 13px; font-weight: 600; cursor: pointer; }
   .controls button:hover { background: #2ea043; }
   .controls button:disabled { background: #30363d; color: #8b949e; cursor: not-allowed; }
-
-  /* ===== 快捷按钮行 ===== */
-  .preset-row {
-    display: flex; gap: 6px; margin-top: 8px;
-    flex-wrap: wrap; align-items: center;
-  }
-  .preset-label {
-    font-size: 11px; color: #8b949e; margin-right: 4px;
-    min-width: 62px;
-  }
-  .preset-btn {
-    padding: 4px 10px; background: #21262d; border: 1px solid #30363d;
-    border-radius: 5px; color: #c9d1d9; font-size: 12px; cursor: pointer;
-    transition: all .15s;
-  }
+  .preset-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+  .preset-label { font-size: 11px; color: #8b949e; margin-right: 4px; min-width: 62px; }
+  .preset-btn { padding: 4px 10px; background: #21262d; border: 1px solid #30363d; border-radius: 5px; color: #c9d1d9; font-size: 12px; cursor: pointer; transition: all .15s; }
   .preset-btn:hover { background: #30363d; }
-
-  /* 激活状态（按哪个哪个变色） */
-  .preset-btn.active {
-    background: #1f6feb33;
-    border-color: #1f6feb;
-    color: #58a6ff;
-    box-shadow: 0 0 0 1px #1f6feb inset;
-    font-weight: 600;
-  }
-  .preset-btn.preset-btn-highlight {
-    background: #23863633; border-color: #238636; color: #3fb950;
-  }
-  .preset-btn.preset-btn-highlight.active {
-    background: #23863666; border-color: #3fb950; color: #fff;
-    box-shadow: 0 0 0 1px #3fb950 inset;
-  }
-  .preset-btn.preset-btn-warn {
-    background: #d2992233; border-color: #d29922; color: #d29922;
-  }
-  .preset-btn.preset-btn-warn.active {
-    background: #d2992266; border-color: #f0b429; color: #fff;
-    box-shadow: 0 0 0 1px #f0b429 inset;
-  }
-
-  .params-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 8px; margin-top: 10px; padding: 10px;
-    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-  }
+  .preset-btn.active { background: #1f6feb33; border-color: #1f6feb; color: #58a6ff; box-shadow: 0 0 0 1px #1f6feb inset; font-weight: 600; }
+  .preset-btn.preset-btn-highlight { background: #23863633; border-color: #238636; color: #3fb950; }
+  .preset-btn.preset-btn-highlight.active { background: #23863666; border-color: #3fb950; color: #fff; box-shadow: 0 0 0 1px #3fb950 inset; }
+  .preset-btn.preset-btn-warn { background: #d2992233; border-color: #d29922; color: #d29922; }
+  .preset-btn.preset-btn-warn.active { background: #d2992266; border-color: #f0b429; color: #fff; box-shadow: 0 0 0 1px #f0b429 inset; }
+  .params-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 10px; padding: 10px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
   .param-item label { display: block; font-size: 11px; color: #8b949e; margin-bottom: 2px; }
-  .param-item input {
-    width: 100%; padding: 4px 6px; background: #0d1117;
-    border: 1px solid #30363d; border-radius: 4px;
-    color: #c9d1d9; font-size: 12px;
-  }
-
-  .progress {
-    margin-top: 12px; padding: 10px 14px;
-    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-    font-size: 13px; display: none;
-  }
-  .progress-bar {
-    width: 100%; height: 6px; background: #21262d;
-    border-radius: 3px; overflow: hidden; margin-top: 8px;
-  }
+  .param-item input { width: 100%; padding: 4px 6px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #c9d1d9; font-size: 12px; }
+  .progress { margin-top: 12px; padding: 10px 14px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; font-size: 13px; display: none; }
+  .progress-bar { width: 100%; height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; margin-top: 8px; }
   .progress-fill { height: 100%; background: #58a6ff; width: 0%; transition: width .3s; }
-
-  .stats-grid {
-    display: grid; grid-template-columns: repeat(6, 1fr);
-    gap: 8px; margin-top: 12px;
-  }
-  .stat-card {
-    background: #161b22; border: 1px solid #30363d;
-    border-radius: 8px; padding: 10px 12px;
-  }
+  .stats-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 12px; }
+  .stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px 12px; }
   .stat-label { font-size: 11px; color: #8b949e; }
   .stat-value { font-size: 20px; font-weight: 700; margin-top: 4px; }
-  .profit { color: #3fb950; }
-  .loss { color: #f85149; }
-  .warn { color: #d29922; }
-  .blue { color: #58a6ff; }
-
-  .chart-wrap {
-    background: #161b22; border: 1px solid #30363d;
-    border-radius: 8px; margin-top: 12px; overflow: hidden;
-  }
+  .profit { color: #3fb950; } .loss { color: #f85149; } .warn { color: #d29922; } .blue { color: #58a6ff; }
+  .chart-wrap { background: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-top: 12px; overflow: hidden; }
   #equityChart { width: 100%; height: 320px; }
   #priceChart { width: 100%; height: 280px; border-top: 1px solid #30363d; }
-
-  table {
-    width: 100%; border-collapse: collapse;
-    background: #161b22; border: 1px solid #30363d;
-    border-radius: 8px; overflow: hidden; font-size: 12px; margin-top: 8px;
-  }
-  th {
-    background: #21262d; color: #8b949e; font-size: 11px;
-    text-transform: uppercase; padding: 7px 9px; text-align: left; font-weight: 600;
-  }
+  table { width: 100%; border-collapse: collapse; background: #161b22; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; font-size: 12px; margin-top: 8px; }
+  th { background: #21262d; color: #8b949e; font-size: 11px; text-transform: uppercase; padding: 7px 9px; text-align: left; font-weight: 600; }
   td { padding: 6px 9px; border-top: 1px solid #21262d; }
   tr:hover { background: #1c2128; }
-
-  .tag {
-    display: inline-block; font-size: 10px; padding: 1px 6px;
-    border-radius: 8px; font-weight: 600;
-  }
-  .tag-stop { background: #f8514933; color: #f85149; }
-  .tag-tp { background: #3fb95033; color: #3fb950; }
-  .tag-trail { background: #58a6ff33; color: #58a6ff; }
-  .tag-time { background: #d2992233; color: #d29922; }
-  .tag-news { background: #a371f733; color: #a371f7; }
-  .tag-eod { background: #8b949e33; color: #8b949e; }
-
-  .hint {
-    font-size: 11px; color: #8b949e; margin-top: 8px; line-height: 1.6;
-    padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
-  }
-  .error {
-    padding: 12px; background: #f8514922; color: #f85149;
-    border: 1px solid #f8514944; border-radius: 6px; margin-top: 12px;
-  }
-
-  /* 小屏兼容 */
-  @media (max-width: 900px) {
-    .stats-grid { grid-template-columns: repeat(3, 1fr); }
-    .preset-label { min-width: auto; }
-  }
+  .tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; font-weight: 600; }
+  .tag-stop { background: #f8514933; color: #f85149; } .tag-tp { background: #3fb95033; color: #3fb950; } .tag-trail { background: #58a6ff33; color: #58a6ff; } .tag-time { background: #d2992233; color: #d29922; } .tag-news { background: #a371f733; color: #a371f7; } .tag-eod { background: #8b949e33; color: #8b949e; }
+  .hint { font-size: 11px; color: #8b949e; margin-top: 8px; line-height: 1.6; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; }
+  .error { padding: 12px; background: #f8514922; color: #f85149; border: 1px solid #f8514944; border-radius: 6px; margin-top: 12px; }
+  @media (max-width: 900px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } .preset-label { min-width: auto; } }
 </style>
 </head>
 <body>
 <div class="container">
-
   <h1>股票自动交易策略A - 完整回测面板</h1>
-  <div class="desc">
-    完整复现当前策略逻辑（多持仓轮动、ATR动态止损、分级止损、部分止盈+跟踪、固定止盈、加仓、时间止损、熔断、分档交易次数、盘后过滤等）。<br>
-    <strong>注意</strong>：<span style="color:#d29922;">新闻情绪用随机模拟（真实历史新闻无法回溯）</span>，其余策略逻辑与实际部署一致。
-  </div>
+  <div class="desc">完整复现当前策略逻辑。新闻情绪用随机模拟，其余策略逻辑与实际部署一致。<br><span style="color:#58a6ff;">提示：默认已配置为推荐组合（META+TSLA，固定止盈2.5%），点击下方按钮可快速切换。</span></div>
 
-  <!-- ===== 基础控制 ===== -->
   <div class="controls">
-    <label>开始日期：</label>
-    <input type="date" id="startDate">
-    <label>结束日期：</label>
-    <input type="date" id="endDate">
+    <label>开始日期：</label><input type="date" id="startDate">
+    <label>结束日期：</label><input type="date" id="endDate">
     <div class="symbols-group" id="symbolsGroup">
       <label><input type="checkbox" value="TSLA" checked>TSLA</label>
-      <label><input type="checkbox" value="AAPL" checked>AAPL</label>
-      <label><input type="checkbox" value="GOOGL" checked>GOOGL</label>
-      <label><input type="checkbox" value="NVDA" checked>NVDA</label>
+      <label><input type="checkbox" value="AAPL">AAPL</label>
+      <label><input type="checkbox" value="GOOGL">GOOGL</label>
+      <label><input type="checkbox" value="NVDA">NVDA</label>
       <label><input type="checkbox" value="META" checked>META</label>
     </div>
     <button id="btnRun">运行完整回测</button>
   </div>
 
-  <!-- ===== 时间段快捷按钮 ===== -->
+  <!-- 时间段快捷按钮 -->
   <div class="preset-row" id="timeframeRow">
     <span class="preset-label">时间段：</span>
     <button class="preset-btn" data-days="5">最近5天</button>
@@ -197,26 +84,26 @@
     <button class="preset-btn" data-days="180">最近180天</button>
   </div>
 
-  <!-- ===== 参数组合快捷按钮 ===== -->
+  <!-- 参数组合快捷按钮 -->
   <div class="preset-row" id="paramPresetRow">
     <span class="preset-label">参数组合：</span>
-    <button class="preset-btn active" id="presetCurrent">当前设置（跟踪1.0%）</button>
+    <button class="preset-btn" id="presetCurrent">当前设置（跟踪1.0%）</button>
     <button class="preset-btn" id="presetTrail15">跟踪回撤1.5%</button>
     <button class="preset-btn" id="presetTrail20">跟踪回撤2.0%</button>
     <button class="preset-btn preset-btn-warn" id="presetFixedTP">禁用跟踪→固定2.5%</button>
-    <button class="preset-btn preset-btn-highlight" id="presetCombo">推荐组合 META+TSLA+跟踪1.5%</button>
+    <button class="preset-btn preset-btn-highlight active" id="presetCombo">推荐组合 META+TSLA+固定2.5%</button>
   </div>
 
-  <!-- ===== 标的组合快捷按钮 ===== -->
+  <!-- 标的组合快捷按钮 -->
   <div class="preset-row" id="symbolPresetRow">
     <span class="preset-label">标的组合：</span>
-    <button class="preset-btn active" id="symAll">全选5只</button>
-    <button class="preset-btn" id="symMetaTsla">只留 META+TSLA</button>
+    <button class="preset-btn" id="symAll">全选5只</button>
+    <button class="preset-btn active" id="symMetaTsla">只留 META+TSLA</button>
     <button class="preset-btn" id="symMetaTslaAapl">META+TSLA+AAPL</button>
     <button class="preset-btn" id="symTop3">META+TSLA+NVDA</button>
   </div>
 
-  <!-- ===== 种子快捷按钮 ===== -->
+  <!-- 种子快捷按钮 -->
   <div class="preset-row" id="seedRow">
     <span class="preset-label">随机种子：</span>
     <button class="preset-btn" id="seedRandom">随机</button>
@@ -225,13 +112,13 @@
     <button class="preset-btn" id="seed999">999</button>
   </div>
 
-  <!-- ===== 参数网格 ===== -->
+  <!-- 参数网格 (默认设为定型参数) -->
   <div class="params-grid">
     <div class="param-item"><label>初始资金（$）</label><input type="number" id="p_capital" value="100000"></div>
     <div class="param-item"><label>基础仓位（%）</label><input type="number" id="p_baseSize" value="5" step="0.5"></div>
     <div class="param-item"><label>部分止盈触发（%）</label><input type="number" id="p_partialTP" value="2.0" step="0.1"></div>
-    <div class="param-item"><label>跟踪止盈回撤（%）</label><input type="number" id="p_trailRetreat" value="1.0" step="0.1"></div>
-    <div class="param-item"><label>固定止盈（%，0=禁用）</label><input type="number" id="p_fixedTP" value="0" step="0.1"></div>
+    <div class="param-item"><label>跟踪止盈回撤（%）</label><input type="number" id="p_trailRetreat" value="0" step="0.1"></div>
+    <div class="param-item"><label>固定止盈（%，0=禁用）</label><input type="number" id="p_fixedTP" value="2.5" step="0.1"></div>
     <div class="param-item"><label>加仓触发（%）</label><input type="number" id="p_addTrigger" value="2.0" step="0.5"></div>
     <div class="param-item"><label>加仓比例（%）</label><input type="number" id="p_addSize" value="3" step="0.5"></div>
     <div class="param-item"><label>单只上限（%）</label><input type="number" id="p_maxExposure" value="10" step="1"></div>
@@ -252,7 +139,6 @@
     <span id="progressText">准备中...</span>
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
   </div>
-
   <div id="resultArea"></div>
 </div>
 
@@ -262,276 +148,88 @@
 // ============================================================
 const WORKER_URL = "https://trading-proxy.jimwayi.workers.dev";
 const MARKET_SYMBOL = "SPY";
-
 const FIXED_PARAMS = {
-  STAGE_BREAKEVEN_PCT: 0.3,
-  STAGE_LOCK_05_PCT: 0.8,
-  STAGE_LOCK_1_PCT: 1.5,
-  TRAILING_STOP_PCT: 0.006,
-  BULL_ATR_MULT: 1.5,
-  BULL_MIN_STOP: 1.5,
-  BULL_MAX_STOP: 3.0,
-  BEAR_ATR_MULT: 1.0,
-  BEAR_MIN_STOP: 0.8,
-  BEAR_MAX_STOP: 1.5,
-  TIME_STOP_MAX_PNL: 0,
-  COMPOSITE_HIGH: 0.8,
-  MA_WINDOW: 30,
-  SLIP_LOW_MAP: { NVDA: 1, META: 1 },
-  NEWS_BULLISH_PROB: 0.25,
-  NEWS_BEARISH_PROB: 0.10
+  STAGE_BREAKEVEN_PCT: 0.3, STAGE_LOCK_05_PCT: 0.8, STAGE_LOCK_1_PCT: 1.5,
+  TRAILING_STOP_PCT: 0.006, BULL_ATR_MULT: 1.5, BULL_MIN_STOP: 1.5, BULL_MAX_STOP: 3.0,
+  BEAR_ATR_MULT: 1.0, BEAR_MIN_STOP: 0.8, BEAR_MAX_STOP: 1.5, TIME_STOP_MAX_PNL: 0,
+  COMPOSITE_HIGH: 0.8, MA_WINDOW: 30, SLIP_LOW_MAP: { NVDA: 1, META: 1 },
+  NEWS_BULLISH_PROB: 0.25, NEWS_BEARISH_PROB: 0.10
 };
 
 // ============================================================
 // 工具函数
 // ============================================================
-function getSelectedSymbols() {
-  return Array.from(document.querySelectorAll('#symbolsGroup input:checked')).map(c => c.value);
-}
+function getSelectedSymbols() { return Array.from(document.querySelectorAll('#symbolsGroup input:checked')).map(c => c.value); }
+function setSelectedSymbols(symbols) { document.querySelectorAll('#symbolsGroup input').forEach(c => { c.checked = symbols.includes(c.value); }); }
+function fmtMoney(v) { return (v >= 0 ? '+' : '') + '$' + v.toFixed(2); }
+function fmtPct(v, digits = 2) { return (v >= 0 ? '+' : '') + v.toFixed(digits) + '%'; }
+function toEtTimeStr(msTimestamp) { return new Date(msTimestamp).toLocaleString('zh-CN', { hour12: false, timeZone: 'America/New_York', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+function getEasternMinutes(msTimestamp) { const et = new Date(new Date(msTimestamp).toLocaleString("en-US", { timeZone: "America/New_York" })); return et.getHours() * 60 + et.getMinutes(); }
+function getEasternDateStr(msTimestamp) { const et = new Date(new Date(msTimestamp).toLocaleString("en-US", { timeZone: "America/New_York" })); return `${et.getFullYear()}-${String(et.getMonth() + 1).padStart(2, '0')}-${String(et.getDate()).padStart(2, '0')}`; }
+function isMarketOpen(msTimestamp) { const m = getEasternMinutes(msTimestamp); return m >= 570 && m < 960; }
+function isBarCloseTime(msTimestamp, tf) { return getEasternMinutes(msTimestamp) % tf === 0; }
+function makeRng(seed) { let s = seed >>> 0; return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; }
 
-function setSelectedSymbols(symbols) {
-  document.querySelectorAll('#symbolsGroup input').forEach(c => {
-    c.checked = symbols.includes(c.value);
-  });
-}
+// 高亮激活辅助
+function activateIn(rowId, btn) { document.querySelectorAll('#' + rowId + ' .preset-btn').forEach(b => b.classList.remove('active')); if (btn) btn.classList.add('active'); }
 
-function fmtMoney(v) {
-  return (v >= 0 ? '+' : '') + '$' + v.toFixed(2);
-}
-
-function fmtPct(v, digits = 2) {
-  return (v >= 0 ? '+' : '') + v.toFixed(digits) + '%';
-}
-
-function toEtTimeStr(msTimestamp) {
-  return new Date(msTimestamp).toLocaleString('zh-CN', {
-    hour12: false, timeZone: 'America/New_York',
-    month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit'
-  });
-}
-
-function getEasternMinutes(msTimestamp) {
-  const et = new Date(new Date(msTimestamp).toLocaleString("en-US", { timeZone: "America/New_York" }));
-  return et.getHours() * 60 + et.getMinutes();
-}
-
-function getEasternDateStr(msTimestamp) {
-  const et = new Date(new Date(msTimestamp).toLocaleString("en-US", { timeZone: "America/New_York" }));
-  return `${et.getFullYear()}-${String(et.getMonth() + 1).padStart(2, '0')}-${String(et.getDate()).padStart(2, '0')}`;
-}
-
-function isMarketOpen(msTimestamp) {
-  const m = getEasternMinutes(msTimestamp);
-  return m >= 570 && m < 960; // 9:30 - 16:00 ET
-}
-
-function isBarCloseTime(msTimestamp, tf) {
-  return getEasternMinutes(msTimestamp) % tf === 0;
-}
-
-function makeRng(seed) {
-  let s = seed >>> 0;
-  return function () {
-    s = (s * 1664525 + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
-}
-
-function hashStr(s) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return h;
-}
-
-// ============================================================
-// 快捷按钮：高亮激活
-// ============================================================
-function activateIn(rowId, btn) {
-  document.querySelectorAll('#' + rowId + ' .preset-btn').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-}
-
-// ============================================================
 // 初始化日期
-// ============================================================
 const today = new Date();
 const d30ago = new Date(today.getTime() - 30 * 24 * 3600 * 1000);
 document.getElementById('endDate').value = today.toISOString().split('T')[0];
 document.getElementById('startDate').value = d30ago.toISOString().split('T')[0];
 
-// ============================================================
 // 时间段按钮
-// ============================================================
 document.querySelectorAll('#timeframeRow .preset-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const days = parseInt(btn.dataset.days);
-    const end = new Date();
-    const start = new Date(end.getTime() - days * 24 * 3600 * 1000);
+    const end = new Date(); const start = new Date(end.getTime() - days * 24 * 3600 * 1000);
     document.getElementById('endDate').value = end.toISOString().split('T')[0];
     document.getElementById('startDate').value = start.toISOString().split('T')[0];
     activateIn('timeframeRow', btn);
   });
 });
+['startDate', 'endDate'].forEach(id => { document.getElementById(id).addEventListener('input', () => { document.querySelectorAll('#timeframeRow .preset-btn').forEach(b => b.classList.remove('active')); }); });
 
-// 手动改日期时，取消时间段按钮高亮
-['startDate', 'endDate'].forEach(id => {
-  document.getElementById(id).addEventListener('input', () => {
-    document.querySelectorAll('#timeframeRow .preset-btn').forEach(b => b.classList.remove('active'));
-  });
-});
-
-// ============================================================
 // 参数组合按钮
-// ============================================================
 function setParam(id, val) { document.getElementById(id).value = val; }
+document.getElementById('presetCurrent').addEventListener('click', (e) => { setParam('p_trailRetreat', '1.0'); setParam('p_fixedTP', '0'); setParam('p_partialTP', '2.0'); activateIn('paramPresetRow', e.currentTarget); logPreset('已应用：当前设置（跟踪回撤1.0%）'); });
+document.getElementById('presetTrail15').addEventListener('click', (e) => { setParam('p_trailRetreat', '1.5'); setParam('p_fixedTP', '0'); activateIn('paramPresetRow', e.currentTarget); logPreset('已应用：跟踪回撤1.5%'); });
+document.getElementById('presetTrail20').addEventListener('click', (e) => { setParam('p_trailRetreat', '2.0'); setParam('p_fixedTP', '0'); activateIn('paramPresetRow', e.currentTarget); logPreset('已应用：跟踪回撤2.0%'); });
+document.getElementById('presetFixedTP').addEventListener('click', (e) => { setParam('p_trailRetreat', '0'); setParam('p_fixedTP', '2.5'); activateIn('paramPresetRow', e.currentTarget); logPreset('已应用：禁用跟踪，固定2.5%止盈'); });
+document.getElementById('presetCombo').addEventListener('click', (e) => { setParam('p_trailRetreat', '0'); setParam('p_fixedTP', '2.5'); setParam('p_partialTP', '2.0'); setSelectedSymbols(['META', 'TSLA']); activateIn('paramPresetRow', e.currentTarget); activateIn('symbolPresetRow', document.getElementById('symMetaTsla')); logPreset('已应用推荐组合：META + TSLA + 固定止盈2.5%'); });
 
-document.getElementById('presetCurrent').addEventListener('click', (e) => {
-  setParam('p_trailRetreat', '1.0');
-  setParam('p_fixedTP', '0');
-  setParam('p_partialTP', '2.0');
-  activateIn('paramPresetRow', e.currentTarget);
-  logPreset('已应用：当前设置（跟踪回撤1.0%，部分止盈2.0%）');
-});
-
-document.getElementById('presetTrail15').addEventListener('click', (e) => {
-  setParam('p_trailRetreat', '1.5');
-  setParam('p_fixedTP', '0');
-  activateIn('paramPresetRow', e.currentTarget);
-  logPreset('已应用：跟踪回撤1.5%');
-});
-
-document.getElementById('presetTrail20').addEventListener('click', (e) => {
-  setParam('p_trailRetreat', '2.0');
-  setParam('p_fixedTP', '0');
-  activateIn('paramPresetRow', e.currentTarget);
-  logPreset('已应用：跟踪回撤2.0%');
-});
-
-document.getElementById('presetFixedTP').addEventListener('click', (e) => {
-  setParam('p_trailRetreat', '0');
-  setParam('p_fixedTP', '2.5');
-  activateIn('paramPresetRow', e.currentTarget);
-  logPreset('已应用：禁用跟踪，部分止盈后剩余仓位用固定2.5%止盈');
-});
-
-document.getElementById('presetCombo').addEventListener('click', (e) => {
-  setParam('p_trailRetreat', '1.5');
-  setParam('p_fixedTP', '0');
-  setParam('p_partialTP', '2.0');
-  setSelectedSymbols(['META', 'TSLA']);
-  activateIn('paramPresetRow', e.currentTarget);
-  activateIn('symbolPresetRow', document.getElementById('symMetaTsla'));
-  logPreset('已应用推荐组合：META + TSLA + 跟踪回撤1.5% + 部分止盈2.0%');
-});
-
-// ============================================================
 // 标的组合按钮
-// ============================================================
-document.getElementById('symAll').addEventListener('click', (e) => {
-  setSelectedSymbols(['TSLA', 'AAPL', 'GOOGL', 'NVDA', 'META']);
-  activateIn('symbolPresetRow', e.currentTarget);
-});
+document.getElementById('symAll').addEventListener('click', (e) => { setSelectedSymbols(['TSLA', 'AAPL', 'GOOGL', 'NVDA', 'META']); activateIn('symbolPresetRow', e.currentTarget); });
+document.getElementById('symMetaTsla').addEventListener('click', (e) => { setSelectedSymbols(['META', 'TSLA']); activateIn('symbolPresetRow', e.currentTarget); });
+document.getElementById('symMetaTslaAapl').addEventListener('click', (e) => { setSelectedSymbols(['META', 'TSLA', 'AAPL']); activateIn('symbolPresetRow', e.currentTarget); });
+document.getElementById('symTop3').addEventListener('click', (e) => { setSelectedSymbols(['META', 'TSLA', 'NVDA']); activateIn('symbolPresetRow', e.currentTarget); });
+document.querySelectorAll('#symbolsGroup input').forEach(cb => { cb.addEventListener('change', () => { document.querySelectorAll('#symbolPresetRow .preset-btn').forEach(b => b.classList.remove('active')); }); });
 
-document.getElementById('symMetaTsla').addEventListener('click', (e) => {
-  setSelectedSymbols(['META', 'TSLA']);
-  activateIn('symbolPresetRow', e.currentTarget);
-});
-
-document.getElementById('symMetaTslaAapl').addEventListener('click', (e) => {
-  setSelectedSymbols(['META', 'TSLA', 'AAPL']);
-  activateIn('symbolPresetRow', e.currentTarget);
-});
-
-document.getElementById('symTop3').addEventListener('click', (e) => {
-  setSelectedSymbols(['META', 'TSLA', 'NVDA']);
-  activateIn('symbolPresetRow', e.currentTarget);
-});
-
-// 手动改标的 checkbox 时，取消标的按钮高亮
-document.querySelectorAll('#symbolsGroup input').forEach(cb => {
-  cb.addEventListener('change', () => {
-    document.querySelectorAll('#symbolPresetRow .preset-btn').forEach(b => b.classList.remove('active'));
-  });
-});
-
-// ============================================================
 // 种子按钮
-// ============================================================
-document.getElementById('seedRandom').addEventListener('click', (e) => {
-  const s = Math.floor(Math.random() * 100000);
-  setParam('p_seed', s);
-  activateIn('seedRow', e.currentTarget);
-  logPreset(`已设置随机种子：${s}`);
-});
+document.getElementById('seedRandom').addEventListener('click', (e) => { const s = Math.floor(Math.random() * 100000); setParam('p_seed', s); activateIn('seedRow', e.currentTarget); logPreset(`已设置随机种子：${s}`); });
+document.getElementById('seed42').addEventListener('click', (e) => { setParam('p_seed', '42'); activateIn('seedRow', e.currentTarget); });
+document.getElementById('seed123').addEventListener('click', (e) => { setParam('p_seed', '123'); activateIn('seedRow', e.currentTarget); });
+document.getElementById('seed999').addEventListener('click', (e) => { setParam('p_seed', '999'); activateIn('seedRow', e.currentTarget); });
+document.getElementById('p_seed').addEventListener('input', () => { document.querySelectorAll('#seedRow .preset-btn').forEach(b => b.classList.remove('active')); });
 
-document.getElementById('seed42').addEventListener('click', (e) => {
-  setParam('p_seed', '42');
-  activateIn('seedRow', e.currentTarget);
-});
-
-document.getElementById('seed123').addEventListener('click', (e) => {
-  setParam('p_seed', '123');
-  activateIn('seedRow', e.currentTarget);
-});
-
-document.getElementById('seed999').addEventListener('click', (e) => {
-  setParam('p_seed', '999');
-  activateIn('seedRow', e.currentTarget);
-});
-
-// 手动改 seed 时，取消种子按钮高亮
-document.getElementById('p_seed').addEventListener('input', () => {
-  document.querySelectorAll('#seedRow .preset-btn').forEach(b => b.classList.remove('active'));
-});
-
-// ============================================================
-// 临时提示
-// ============================================================
-function logPreset(msg) {
-  const el = document.getElementById('progressText');
-  const box = document.getElementById('progress');
-  if (!el || !box) return;
-  el.textContent = msg;
-  box.style.display = 'block';
-  setTimeout(() => {
-    if (box.style.display !== 'none') box.style.display = 'none';
-  }, 2200);
-}
-
-// 运行按钮
+function logPreset(msg) { const el = document.getElementById('progressText'); const box = document.getElementById('progress'); if (!el || !box) return; el.textContent = msg; box.style.display = 'block'; setTimeout(() => { if (box.style.display !== 'none') box.style.display = 'none'; }, 2200); }
 document.getElementById('btnRun').addEventListener('click', runFullBacktest);
 
 // ============================================================
 // 数据拉取
 // ============================================================
 async function fetchAllBars(symbol, tf, startISO, endISO, onProgress) {
-  const tfMap = { 1: '1Min', 5: '5Min' };
-  const allBars = [];
-  let pageToken = null;
-  let page = 0;
-  const maxPages = 20;
-
+  const tfMap = { 1: '1Min', 5: '5Min' }; const allBars = []; let pageToken = null; let page = 0; const maxPages = 20;
   while (page < maxPages) {
     let url = `${WORKER_URL}/alpaca-data/v2/stocks/${symbol}/bars?timeframe=${tfMap[tf]}&start=${startISO}&end=${endISO}&limit=10000&feed=iex&sort=asc&adjustment=raw`;
     if (pageToken) url += `&page_token=${encodeURIComponent(pageToken)}`;
-
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`${symbol} K线 HTTP ${resp.status}`);
-    const json = await resp.json();
-    const bars = json.bars || [];
-
-    for (const b of bars) {
-      allBars.push({
-        time: new Date(b.t).getTime(),
-        open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v
-      });
-    }
+    const resp = await fetch(url); if (!resp.ok) throw new Error(`${symbol} K线 HTTP ${resp.status}`);
+    const json = await resp.json(); const bars = json.bars || [];
+    for (const b of bars) { allBars.push({ time: new Date(b.t).getTime(), open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v }); }
     if (onProgress) onProgress(page + 1, bars.length);
-    if (!json.next_page_token) break;
-    pageToken = json.next_page_token;
-    page++;
-    await new Promise(r => setTimeout(r, 200));
+    if (!json.next_page_token) break; pageToken = json.next_page_token; page++; await new Promise(r => setTimeout(r, 200));
   }
   return allBars;
 }
@@ -542,47 +240,22 @@ async function fetchAllBars(symbol, tf, startISO, endISO, onProgress) {
 function backtest(dataMap, marketBars, params) {
   const symbols = Object.keys(dataMap).filter(s => dataMap[s] && dataMap[s].length > 0);
   if (symbols.length === 0) return null;
-
   const rng = makeRng(params.seed);
 
-  // 预计算：ATR / 均量 / 趋势
+  // 预计算 ATR / 均量 / 趋势
   const atrCache = {}, volMaCache = {}, trendCache = {};
   for (const sym of symbols) {
     const bars = dataMap[sym];
-    atrCache[sym] = bars.map((_, i) => {
-      if (i < 19) return null;
-      let s = 0;
-      for (let j = i - 19; j <= i; j++) s += ((bars[j].high - bars[j].low) / bars[j].close) * 100;
-      return s / 20;
-    });
-    volMaCache[sym] = bars.map((_, i) => {
-      if (i < 19) return null;
-      let s = 0;
-      for (let j = i - 19; j <= i; j++) s += bars[j].volume;
-      return s / 20;
-    });
+    atrCache[sym] = bars.map((_, i) => { if (i < 19) return null; let s = 0; for (let j = i - 19; j <= i; j++) s += ((bars[j].high - bars[j].low) / bars[j].close) * 100; return s / 20; });
+    volMaCache[sym] = bars.map((_, i) => { if (i < 19) return null; let s = 0; for (let j = i - 19; j <= i; j++) s += bars[j].volume; return s / 20; });
     const needTrend = Math.ceil(15 / params.tf);
-    trendCache[sym] = bars.map((_, i) => {
-      if (i < needTrend) return false;
-      const recent = bars.slice(i - needTrend + 1, i + 1);
-      if (recent[recent.length - 1].close <= recent[0].open) return false;
-      let up = 0;
-      for (let k = 1; k < recent.length; k++) {
-        if (recent[k].close > recent[k - 1].close) up++;
-      }
-      return up >= Math.ceil(needTrend / 2);
-    });
+    trendCache[sym] = bars.map((_, i) => { if (i < needTrend) return false; const recent = bars.slice(i - needTrend + 1, i + 1); if (recent[recent.length - 1].close <= recent[0].open) return false; let up = 0; for (let k = 1; k < recent.length; k++) { if (recent[k].close > recent[k - 1].close) up++; } return up >= Math.ceil(needTrend / 2); });
   }
 
-  // 市场状态（SPY 30根均线对比前30根）
   let marketState = { isBull: false, loaded: false, lastUpdate: 0 };
-
   function computeMarketStateAtTime(msTs) {
     if (!marketBars || marketBars.length === 0) return { isBull: false, loaded: true };
-    let idx = -1;
-    for (let i = marketBars.length - 1; i >= 0; i--) {
-      if (marketBars[i].time <= msTs) { idx = i; break; }
-    }
+    let idx = -1; for (let i = marketBars.length - 1; i >= 0; i--) { if (marketBars[i].time <= msTs) { idx = i; break; } }
     if (idx < FIXED_PARAMS.MA_WINDOW * 2) return { isBull: false, loaded: true };
     const recent = marketBars.slice(idx - FIXED_PARAMS.MA_WINDOW + 1, idx + 1);
     const prev = marketBars.slice(idx - FIXED_PARAMS.MA_WINDOW * 2 + 1, idx - FIXED_PARAMS.MA_WINDOW + 1);
@@ -591,436 +264,177 @@ function backtest(dataMap, marketBars, params) {
     return { isBull: rAvg > pAvg, loaded: true };
   }
 
-  // 状态
-  let cash = params.capital;
-  const positions = [];
-  const trades = [];
-  const equityCurve = [];
-  const dailyTradeCount = {};
-  const dailySymbolRealizedPnL = {};
-  let dailyAccountRealizedPnL = 0;
-  let circuitBroken = false;
-  let currentDate = null;
-  let maxEquity = params.capital;
-  let maxDrawdown = 0;
-  const dailyEquity = {};
+  let cash = params.capital; const positions = []; const trades = []; const equityCurve = []; const dailyTradeCount = {}; const dailySymbolRealizedPnL = {}; let dailyAccountRealizedPnL = 0; let circuitBroken = false; let currentDate = null; let maxEquity = params.capital; let maxDrawdown = 0; const dailyEquity = {};
 
-  // 事件流
   const allEvents = [];
-  for (const sym of symbols) {
-    dataMap[sym].forEach((bar, idx) => {
-      allEvents.push({ symbol: sym, idx, ...bar });
-    });
-  }
+  for (const sym of symbols) { dataMap[sym].forEach((bar, idx) => { allEvents.push({ symbol: sym, idx, ...bar }); }); }
   allEvents.sort((a, b) => a.time - b.time || a.symbol.localeCompare(b.symbol));
-
-  const currentIdx = {};
-  for (const sym of symbols) currentIdx[sym] = -1;
-
+  const currentIdx = {}; for (const sym of symbols) currentIdx[sym] = -1;
   let lastEvaluatedTime = -1;
 
-  // ========== 主循环 ==========
   for (let ei = 0; ei < allEvents.length; ei++) {
-    const evt = allEvents[ei];
-    const sym = evt.symbol;
-    currentIdx[sym] = evt.idx;
-    const msTs = evt.time;
-    const etDateStr = getEasternDateStr(msTs);
+    const evt = allEvents[ei]; const sym = evt.symbol; currentIdx[sym] = evt.idx; const msTs = evt.time; const etDateStr = getEasternDateStr(msTs);
 
-    // 日期切换：记录日终权益 + 重置日内计数器
     if (etDateStr !== currentDate) {
-      if (currentDate) {
-        const posValue = positions.reduce((s, p) => {
-          const bars = dataMap[p.symbol];
-          const idx = currentIdx[p.symbol];
-          if (idx >= 0 && bars[idx]) return s + p.qty * bars[idx].close;
-          return s + p.qty * p.entryPrice;
-        }, 0);
-        dailyEquity[currentDate] = cash + posValue;
-      }
+      if (currentDate) { const posValue = positions.reduce((s, p) => { const bars = dataMap[p.symbol]; const idx = currentIdx[p.symbol]; if (idx >= 0 && bars[idx]) return s + p.qty * bars[idx].close; return s + p.qty * p.entryPrice; }, 0); dailyEquity[currentDate] = cash + posValue; }
       currentDate = etDateStr;
-      for (const k in dailyTradeCount) delete dailyTradeCount[k];
-      for (const k in dailySymbolRealizedPnL) delete dailySymbolRealizedPnL[k];
-      dailyAccountRealizedPnL = 0;
-      circuitBroken = false;
+      for (const k in dailyTradeCount) delete dailyTradeCount[k]; for (const k in dailySymbolRealizedPnL) delete dailySymbolRealizedPnL[k];
+      dailyAccountRealizedPnL = 0; circuitBroken = false;
     }
 
-    // 更新市场状态（每30分钟）
-    if (msTs - marketState.lastUpdate >= 30 * 60 * 1000) {
-      marketState = computeMarketStateAtTime(msTs);
-      marketState.lastUpdate = msTs;
-    }
+    if (msTs - marketState.lastUpdate >= 30 * 60 * 1000) { marketState = computeMarketStateAtTime(msTs); marketState.lastUpdate = msTs; }
 
-    // ===== 出场检查 =====
+    // 出场检查
     for (let pi = positions.length - 1; pi >= 0; pi--) {
-      const pos = positions[pi];
-      if (pos.symbol !== sym) continue;
-
-      const bar = evt;
-      const price = bar.close;
-      const pnlPct = ((price - pos.entryPrice) / pos.entryPrice) * 100;
-
-      if (bar.high > pos.highPrice) pos.highPrice = bar.high;
-      const highPrice = pos.highPrice;
-
+      const pos = positions[pi]; if (pos.symbol !== sym) continue;
+      const bar = evt; const price = bar.close; const pnlPct = ((price - pos.entryPrice) / pos.entryPrice) * 100;
+      if (bar.high > pos.highPrice) pos.highPrice = bar.high; const highPrice = pos.highPrice;
       let closed = false;
 
       // 1) 部分止盈
       if (!pos.partialTP && pnlPct >= params.partialTP) {
-        const halfQty = pos.qty / 2;
-        const slip = getSlippage(sym, params);
-        const sellPrice = price * (1 - slip);
-        cash += halfQty * sellPrice;
-        const realizedPnL = halfQty * (sellPrice - pos.entryPrice);
-        const realizedCost = halfQty * pos.entryPrice;
-        pos.qty -= halfQty;
-        pos.partialTP = true;
-        trades.push({
-          symbol: sym, qty: halfQty,
-          entryPrice: pos.entryPrice, exitPrice: sellPrice,
-          entryTime: pos.entryTime, exitTime: msTs,
-          pnl: realizedPnL,
-          pnlPct: realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0,
-          reason: '部分止盈', entryAtrPct: pos.atrPct
-        });
-        dailySymbolRealizedPnL[sym] = (dailySymbolRealizedPnL[sym] || 0) + (realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0);
-        dailyAccountRealizedPnL += (realizedPnL / params.capital) * 100;
+        const halfQty = pos.qty / 2; const slip = getSlippage(sym, params); const sellPrice = price * (1 - slip); cash += halfQty * sellPrice;
+        const realizedPnL = halfQty * (sellPrice - pos.entryPrice); const realizedCost = halfQty * pos.entryPrice;
+        pos.qty -= halfQty; pos.partialTP = true;
+        trades.push({ symbol: sym, qty: halfQty, entryPrice: pos.entryPrice, exitPrice: sellPrice, entryTime: pos.entryTime, exitTime: msTs, pnl: realizedPnL, pnlPct: realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0, reason: '部分止盈', entryAtrPct: pos.atrPct });
+        dailySymbolRealizedPnL[sym] = (dailySymbolRealizedPnL[sym] || 0) + (realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0); dailyAccountRealizedPnL += (realizedPnL / params.capital) * 100;
       }
 
       // 2) 部分止盈后的剩余仓位：固定止盈 或 跟踪止盈
       if (pos.partialTP && pos.qty > 0.0001) {
-        // 固定止盈
         if (params.fixedTP > 0 && pnlPct >= params.fixedTP) {
-          const slip = getSlippage(sym, params);
-          const sellPrice = price * (1 - slip);
-          cash += pos.qty * sellPrice;
-          const realizedPnL = pos.qty * (sellPrice - pos.entryPrice);
-          const realizedCost = pos.qty * pos.entryPrice;
-          trades.push({
-            symbol: sym, qty: pos.qty,
-            entryPrice: pos.entryPrice, exitPrice: sellPrice,
-            entryTime: pos.entryTime, exitTime: msTs,
-            pnl: realizedPnL,
-            pnlPct: realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0,
-            reason: '固定止盈', entryAtrPct: pos.atrPct
-          });
-          dailySymbolRealizedPnL[sym] = (dailySymbolRealizedPnL[sym] || 0) + (realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0);
-          dailyAccountRealizedPnL += (realizedPnL / params.capital) * 100;
-          dailyTradeCount[sym] = (dailyTradeCount[sym] || 0) + 1;
-          positions.splice(pi, 1);
-          closed = true;
-          continue;
-        }
-        // 跟踪止盈
-        else if (params.trailRetreat > 0) {
+          const slip = getSlippage(sym, params); const sellPrice = price * (1 - slip); cash += pos.qty * sellPrice;
+          const realizedPnL = pos.qty * (sellPrice - pos.entryPrice); const realizedCost = pos.qty * pos.entryPrice;
+          trades.push({ symbol: sym, qty: pos.qty, entryPrice: pos.entryPrice, exitPrice: sellPrice, entryTime: pos.entryTime, exitTime: msTs, pnl: realizedPnL, pnlPct: realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0, reason: '固定止盈', entryAtrPct: pos.atrPct });
+          dailySymbolRealizedPnL[sym] = (dailySymbolRealizedPnL[sym] || 0) + (realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0); dailyAccountRealizedPnL += (realizedPnL / params.capital) * 100; dailyTradeCount[sym] = (dailyTradeCount[sym] || 0) + 1; positions.splice(pi, 1); closed = true; continue;
+        } else if (params.trailRetreat > 0) {
           const trailPrice = highPrice * (1 - params.trailRetreat / 100);
           if (price <= trailPrice) {
-            const slip = getSlippage(sym, params);
-            const sellPrice = price * (1 - slip);
-            cash += pos.qty * sellPrice;
-            const realizedPnL = pos.qty * (sellPrice - pos.entryPrice);
-            const realizedCost = pos.qty * pos.entryPrice;
-            trades.push({
-              symbol: sym, qty: pos.qty,
-              entryPrice: pos.entryPrice, exitPrice: sellPrice,
-              entryTime: pos.entryTime, exitTime: msTs,
-              pnl: realizedPnL,
-              pnlPct: realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0,
-              reason: '跟踪止盈', entryAtrPct: pos.atrPct
-            });
-            dailySymbolRealizedPnL[sym] = (dailySymbolRealizedPnL[sym] || 0) + (realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0);
-            dailyAccountRealizedPnL += (realizedPnL / params.capital) * 100;
-            dailyTradeCount[sym] = (dailyTradeCount[sym] || 0) + 1;
-            positions.splice(pi, 1);
-            closed = true;
-            continue;
+            const slip = getSlippage(sym, params); const sellPrice = price * (1 - slip); cash += pos.qty * sellPrice;
+            const realizedPnL = pos.qty * (sellPrice - pos.entryPrice); const realizedCost = pos.qty * pos.entryPrice;
+            trades.push({ symbol: sym, qty: pos.qty, entryPrice: pos.entryPrice, exitPrice: sellPrice, entryTime: pos.entryTime, exitTime: msTs, pnl: realizedPnL, pnlPct: realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0, reason: '跟踪止盈', entryAtrPct: pos.atrPct });
+            dailySymbolRealizedPnL[sym] = (dailySymbolRealizedPnL[sym] || 0) + (realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0); dailyAccountRealizedPnL += (realizedPnL / params.capital) * 100; dailyTradeCount[sym] = (dailyTradeCount[sym] || 0) + 1; positions.splice(pi, 1); closed = true; continue;
           }
         }
       }
 
-      // 3) 分级止损（未部分止盈时）
+      // 3) 分级止损
       if (!pos.partialTP && !closed) {
         const stopInfo = getEffectiveStopPrice(pos.entryPrice, price, highPrice, pos.entryStopLossPct, pnlPct);
         if (price <= stopInfo.price) {
-          const slip = getSlippage(sym, params);
-          const sellPrice = price * (1 - slip);
-          cash += pos.qty * sellPrice;
-          const realizedPnL = pos.qty * (sellPrice - pos.entryPrice);
-          const realizedCost = pos.qty * pos.entryPrice;
-          trades.push({
-            symbol: sym, qty: pos.qty,
-            entryPrice: pos.entryPrice, exitPrice: sellPrice,
-            entryTime: pos.entryTime, exitTime: msTs,
-            pnl: realizedPnL,
-            pnlPct: realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0,
-            reason: stopInfo.stage, entryAtrPct: pos.atrPct
-          });
-          dailySymbolRealizedPnL[sym] = (dailySymbolRealizedPnL[sym] || 0) + (realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0);
-          dailyAccountRealizedPnL += (realizedPnL / params.capital) * 100;
-          dailyTradeCount[sym] = (dailyTradeCount[sym] || 0) + 1;
-          positions.splice(pi, 1);
-          closed = true;
-          continue;
+          const slip = getSlippage(sym, params); const sellPrice = price * (1 - slip); cash += pos.qty * sellPrice;
+          const realizedPnL = pos.qty * (sellPrice - pos.entryPrice); const realizedCost = pos.qty * pos.entryPrice;
+          trades.push({ symbol: sym, qty: pos.qty, entryPrice: pos.entryPrice, exitPrice: sellPrice, entryTime: pos.entryTime, exitTime: msTs, pnl: realizedPnL, pnlPct: realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0, reason: stopInfo.stage, entryAtrPct: pos.atrPct });
+          dailySymbolRealizedPnL[sym] = (dailySymbolRealizedPnL[sym] || 0) + (realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0); dailyAccountRealizedPnL += (realizedPnL / params.capital) * 100; dailyTradeCount[sym] = (dailyTradeCount[sym] || 0) + 1; positions.splice(pi, 1); closed = true; continue;
         }
       }
 
-      // 4) 时间止损（仅浮亏）
+      // 4) 时间止损
       if (!closed) {
         const holdMin = (msTs - pos.entryTime) / 60000;
         if (holdMin >= params.timeStop && pnlPct < FIXED_PARAMS.TIME_STOP_MAX_PNL) {
-          const slip = getSlippage(sym, params);
-          const sellPrice = price * (1 - slip);
-          cash += pos.qty * sellPrice;
-          const realizedPnL = pos.qty * (sellPrice - pos.entryPrice);
-          const realizedCost = pos.qty * pos.entryPrice;
-          trades.push({
-            symbol: sym, qty: pos.qty,
-            entryPrice: pos.entryPrice, exitPrice: sellPrice,
-            entryTime: pos.entryTime, exitTime: msTs,
-            pnl: realizedPnL,
-            pnlPct: realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0,
-            reason: '时间止损', entryAtrPct: pos.atrPct
-          });
-          dailySymbolRealizedPnL[sym] = (dailySymbolRealizedPnL[sym] || 0) + (realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0);
-          dailyAccountRealizedPnL += (realizedPnL / params.capital) * 100;
-          dailyTradeCount[sym] = (dailyTradeCount[sym] || 0) + 1;
-          positions.splice(pi, 1);
-          closed = true;
-          continue;
+          const slip = getSlippage(sym, params); const sellPrice = price * (1 - slip); cash += pos.qty * sellPrice;
+          const realizedPnL = pos.qty * (sellPrice - pos.entryPrice); const realizedCost = pos.qty * pos.entryPrice;
+          trades.push({ symbol: sym, qty: pos.qty, entryPrice: pos.entryPrice, exitPrice: sellPrice, entryTime: pos.entryTime, exitTime: msTs, pnl: realizedPnL, pnlPct: realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0, reason: '时间止损', entryAtrPct: pos.atrPct });
+          dailySymbolRealizedPnL[sym] = (dailySymbolRealizedPnL[sym] || 0) + (realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0); dailyAccountRealizedPnL += (realizedPnL / params.capital) * 100; dailyTradeCount[sym] = (dailyTradeCount[sym] || 0) + 1; positions.splice(pi, 1); closed = true; continue;
         }
       }
 
       // 5) 加仓
       if (!closed && !pos.added && pnlPct >= params.addTrigger) {
-        const currentPosValue = pos.qty * price;
-        const totalEquityNow = cash + currentPosValue;
-        const currentExposurePct = (currentPosValue / totalEquityNow) * 100;
+        const currentPosValue = pos.qty * price; const totalEquityNow = cash + currentPosValue; const currentExposurePct = (currentPosValue / totalEquityNow) * 100;
         if (currentExposurePct < params.maxExposure) {
-          const addValue = totalEquityNow * (params.addSize / 100);
-          const newExposurePct = ((currentPosValue + addValue) / totalEquityNow) * 100;
+          const addValue = totalEquityNow * (params.addSize / 100); const newExposurePct = ((currentPosValue + addValue) / totalEquityNow) * 100;
           if (newExposurePct <= params.maxExposure && cash >= addValue) {
-            const slip = getSlippage(sym, params);
-            const buyPrice = price * (1 + slip);
-            const addQty = addValue / buyPrice;
-            cash -= addValue;
-            const totalQty = pos.qty + addQty;
-            pos.entryPrice = (pos.qty * pos.entryPrice + addQty * buyPrice) / totalQty;
-            pos.qty = totalQty;
-            pos.added = true;
-            pos.highPrice = price;
+            const slip = getSlippage(sym, params); const buyPrice = price * (1 + slip); const addQty = addValue / buyPrice;
+            cash -= addValue; const totalQty = pos.qty + addQty; pos.entryPrice = (pos.qty * pos.entryPrice + addQty * buyPrice) / totalQty; pos.qty = totalQty; pos.added = true; pos.highPrice = price;
           }
         }
       }
     }
 
-    // ===== 记录权益曲线（每个时间戳只记一次）=====
+    // 记录权益曲线
     if (ei === 0 || allEvents[ei - 1].time !== msTs) {
-      const posValue = positions.reduce((s, p) => {
-        const bars = dataMap[p.symbol];
-        const idx = currentIdx[p.symbol];
-        if (idx >= 0 && bars[idx]) return s + p.qty * bars[idx].close;
-        return s + p.qty * p.entryPrice;
-      }, 0);
-      const equity = cash + posValue;
-      equityCurve.push({ time: Math.floor(msTs / 1000), value: equity });
-      if (equity > maxEquity) maxEquity = equity;
-      const dd = ((maxEquity - equity) / maxEquity) * 100;
-      if (dd > maxDrawdown) maxDrawdown = dd;
+      const posValue = positions.reduce((s, p) => { const bars = dataMap[p.symbol]; const idx = currentIdx[p.symbol]; if (idx >= 0 && bars[idx]) return s + p.qty * bars[idx].close; return s + p.qty * p.entryPrice; }, 0);
+      const equity = cash + posValue; equityCurve.push({ time: Math.floor(msTs / 1000), value: equity });
+      if (equity > maxEquity) maxEquity = equity; const dd = ((maxEquity - equity) / maxEquity) * 100; if (dd > maxDrawdown) maxDrawdown = dd;
     }
 
-    // ===== 入场评估（每个时间戳只评估一次）=====
-    if (msTs === lastEvaluatedTime) continue;
-    lastEvaluatedTime = msTs;
+    // 入场评估
+    if (msTs === lastEvaluatedTime) continue; lastEvaluatedTime = msTs;
+    if (!isBarCloseTime(msTs, params.tf)) continue; if (!isMarketOpen(msTs)) continue; if (circuitBroken) continue; if (positions.length >= params.maxPositions) continue;
 
-    if (!isBarCloseTime(msTs, params.tf)) continue;
-    if (!isMarketOpen(msTs)) continue;
-    if (circuitBroken) continue;
-    if (positions.length >= params.maxPositions) continue;
+    const posValueNow = positions.reduce((s, p) => { const bars = dataMap[p.symbol]; const idx = currentIdx[p.symbol]; if (idx >= 0 && bars[idx]) return s + p.qty * bars[idx].close; return s + p.qty * p.entryPrice; }, 0);
+    const totalEquityNow = cash + posValueNow; const totalExposurePct = (posValueNow / totalEquityNow) * 100; if (totalExposurePct >= params.maxTotal) continue;
 
-    const posValueNow = positions.reduce((s, p) => {
-      const bars = dataMap[p.symbol];
-      const idx = currentIdx[p.symbol];
-      if (idx >= 0 && bars[idx]) return s + p.qty * bars[idx].close;
-      return s + p.qty * p.entryPrice;
-    }, 0);
-    const totalEquityNow = cash + posValueNow;
-    const totalExposurePct = (posValueNow / totalEquityNow) * 100;
-    if (totalExposurePct >= params.maxTotal) continue;
-
-    // 收盘强平检查
+    // 收盘强平
     const m = getEasternMinutes(msTs);
     if (m >= params.forceClose && positions.length > 0) {
       for (let pi = positions.length - 1; pi >= 0; pi--) {
-        const pos = positions[pi];
-        const bars = dataMap[pos.symbol];
-        const idx = currentIdx[pos.symbol];
-        if (idx < 0 || !bars[idx]) continue;
-        const price = bars[idx].close;
-        const slip = getSlippage(pos.symbol, params);
-        const sellPrice = price * (1 - slip);
-        cash += pos.qty * sellPrice;
-        const realizedPnL = pos.qty * (sellPrice - pos.entryPrice);
-        const realizedCost = pos.qty * pos.entryPrice;
-        trades.push({
-          symbol: pos.symbol, qty: pos.qty,
-          entryPrice: pos.entryPrice, exitPrice: sellPrice,
-          entryTime: pos.entryTime, exitTime: msTs,
-          pnl: realizedPnL,
-          pnlPct: realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0,
-          reason: '收盘强平', entryAtrPct: pos.atrPct
-        });
-        dailySymbolRealizedPnL[pos.symbol] = (dailySymbolRealizedPnL[pos.symbol] || 0) + (realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0);
-        dailyAccountRealizedPnL += (realizedPnL / params.capital) * 100;
-        dailyTradeCount[pos.symbol] = (dailyTradeCount[pos.symbol] || 0) + 1;
-        positions.splice(pi, 1);
+        const pos = positions[pi]; const bars = dataMap[pos.symbol]; const idx = currentIdx[pos.symbol]; if (idx < 0 || !bars[idx]) continue;
+        const price = bars[idx].close; const slip = getSlippage(pos.symbol, params); const sellPrice = price * (1 - slip); cash += pos.qty * sellPrice;
+        const realizedPnL = pos.qty * (sellPrice - pos.entryPrice); const realizedCost = pos.qty * pos.entryPrice;
+        trades.push({ symbol: pos.symbol, qty: pos.qty, entryPrice: pos.entryPrice, exitPrice: sellPrice, entryTime: pos.entryTime, exitTime: msTs, pnl: realizedPnL, pnlPct: realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0, reason: '收盘强平', entryAtrPct: pos.atrPct });
+        dailySymbolRealizedPnL[pos.symbol] = (dailySymbolRealizedPnL[pos.symbol] || 0) + (realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0); dailyAccountRealizedPnL += (realizedPnL / params.capital) * 100; dailyTradeCount[pos.symbol] = (dailyTradeCount[pos.symbol] || 0) + 1; positions.splice(pi, 1);
       }
       continue;
     }
 
-    // 候选筛选
-    const heldSymbols = new Set(positions.map(p => p.symbol));
-    const candidates = [];
-
+    const heldSymbols = new Set(positions.map(p => p.symbol)); const candidates = [];
     for (const s of symbols) {
       if (heldSymbols.has(s)) continue;
-
-      const maxTrades = getMaxDailyTrades(dailySymbolRealizedPnL[s] || 0);
-      if ((dailyTradeCount[s] || 0) >= maxTrades) continue;
-
-      const idx = currentIdx[s];
-      if (idx < 25) continue;
-      const bars = dataMap[s];
-      const bar = bars[idx];
-
-      const barRange = ((bar.high - bar.low) / bar.close) * 100;
-      if (barRange > 1.0) continue;
-
-      const atrPct = atrCache[s][idx];
-      if (atrPct == null || atrPct > params.atrThreshold) continue;
-
-      const pastPrice = bars[idx - 3].close;
-      const momentumPct = ((bar.close - pastPrice) / pastPrice) * 100;
-      if (momentumPct < params.momentum) continue;
-
+      const maxTrades = getMaxDailyTrades(dailySymbolRealizedPnL[s] || 0); if ((dailyTradeCount[s] || 0) >= maxTrades) continue;
+      const idx = currentIdx[s]; if (idx < 25) continue; const bars = dataMap[s]; const bar = bars[idx];
+      const barRange = ((bar.high - bar.low) / bar.close) * 100; if (barRange > 1.0) continue;
+      const atrPct = atrCache[s][idx]; if (atrPct == null || atrPct > params.atrThreshold) continue;
+      const pastPrice = bars[idx - 3].close; const momentumPct = ((bar.close - pastPrice) / pastPrice) * 100; if (momentumPct < params.momentum) continue;
       if (!trendCache[s][idx]) continue;
-
-      const newsScore = simulateNews(s, msTs, rng, params);
-      if (!newsScore.bullish) continue;
-
-      const momentumScore = Math.min(momentumPct / 5, 1);
-      const composite = newsScore.score * 0.6 + momentumScore * 0.4;
-
-      candidates.push({
-        symbol: s, price: bar.close, composite, atrPct, momentumPct
-      });
+      const newsScore = simulateNews(s, msTs, rng, params); if (!newsScore.bullish) continue;
+      const momentumScore = Math.min(momentumPct / 5, 1); const composite = newsScore.score * 0.6 + momentumScore * 0.4;
+      candidates.push({ symbol: s, price: bar.close, composite, atrPct, momentumPct });
     }
 
-    if (candidates.length === 0) continue;
-    candidates.sort((a, b) => b.composite - a.composite);
-
-    let opened = 0;
-    const remainingSlots = params.maxPositions - positions.length;
-
+    if (candidates.length === 0) continue; candidates.sort((a, b) => b.composite - a.composite);
+    let opened = 0; const remainingSlots = params.maxPositions - positions.length;
     for (const c of candidates) {
       if (opened >= remainingSlots) break;
-
-      const positionValue = totalEquityNow * (params.baseSize / 100);
-      if ((posValueNow + positionValue) / totalEquityNow * 100 > params.maxTotal) continue;
-
-      const slip = getSlippage(c.symbol, params);
-      const buyPrice = c.price * (1 + slip);
-      const qty = positionValue / buyPrice;
-
-      const isBull = marketState.isBull;
-      const mult = isBull ? FIXED_PARAMS.BULL_ATR_MULT : FIXED_PARAMS.BEAR_ATR_MULT;
-      const minStop = isBull ? FIXED_PARAMS.BULL_MIN_STOP : FIXED_PARAMS.BEAR_MIN_STOP;
-      const maxStop = isBull ? FIXED_PARAMS.BULL_MAX_STOP : FIXED_PARAMS.BEAR_MAX_STOP;
-      const dynStop = Math.max(minStop, Math.min(maxStop, c.atrPct * mult));
-
+      const positionValue = totalEquityNow * (params.baseSize / 100); if ((posValueNow + positionValue) / totalEquityNow * 100 > params.maxTotal) continue;
+      const slip = getSlippage(c.symbol, params); const buyPrice = c.price * (1 + slip); const qty = positionValue / buyPrice;
+      const isBull = marketState.isBull; const mult = isBull ? FIXED_PARAMS.BULL_ATR_MULT : FIXED_PARAMS.BEAR_ATR_MULT; const minStop = isBull ? FIXED_PARAMS.BULL_MIN_STOP : FIXED_PARAMS.BEAR_MIN_STOP; const maxStop = isBull ? FIXED_PARAMS.BULL_MAX_STOP : FIXED_PARAMS.BEAR_MAX_STOP; const dynStop = Math.max(minStop, Math.min(maxStop, c.atrPct * mult));
       cash -= qty * buyPrice;
-      positions.push({
-        symbol: c.symbol, qty,
-        entryPrice: buyPrice, entryTime: msTs,
-        entryIdx: currentIdx[c.symbol], highPrice: c.price,
-        atrPct: c.atrPct, entryStopLossPct: dynStop,
-        partialTP: false, added: false
-      });
+      positions.push({ symbol: c.symbol, qty, entryPrice: buyPrice, entryTime: msTs, entryIdx: currentIdx[c.symbol], highPrice: c.price, atrPct: c.atrPct, entryStopLossPct: dynStop, partialTP: false, added: false });
       opened++;
     }
-
-    // 熔断检查
-    if (!circuitBroken && dailyAccountRealizedPnL <= -params.circuit) {
-      circuitBroken = true;
-    }
+    if (!circuitBroken && dailyAccountRealizedPnL <= -params.circuit) { circuitBroken = true; }
   }
 
-  // ===== 期末平仓 =====
+  // 期末平仓
   for (const pos of positions) {
-    const bars = dataMap[pos.symbol];
-    const lastBar = bars[bars.length - 1];
-    const slip = getSlippage(pos.symbol, params);
-    const sellPrice = lastBar.close * (1 - slip);
-    cash += pos.qty * sellPrice;
-    const realizedPnL = pos.qty * (sellPrice - pos.entryPrice);
-    const realizedCost = pos.qty * pos.entryPrice;
-    trades.push({
-      symbol: pos.symbol, qty: pos.qty,
-      entryPrice: pos.entryPrice, exitPrice: sellPrice,
-      entryTime: pos.entryTime, exitTime: lastBar.time,
-      pnl: realizedPnL,
-      pnlPct: realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0,
-      reason: '期末平仓', entryAtrPct: pos.atrPct
-    });
+    const bars = dataMap[pos.symbol]; const lastBar = bars[bars.length - 1]; const slip = getSlippage(pos.symbol, params); const sellPrice = lastBar.close * (1 - slip); cash += pos.qty * sellPrice;
+    const realizedPnL = pos.qty * (sellPrice - pos.entryPrice); const realizedCost = pos.qty * pos.entryPrice;
+    trades.push({ symbol: pos.symbol, qty: pos.qty, entryPrice: pos.entryPrice, exitPrice: sellPrice, entryTime: pos.entryTime, exitTime: lastBar.time, pnl: realizedPnL, pnlPct: realizedCost > 0 ? (realizedPnL / realizedCost) * 100 : 0, reason: '期末平仓', entryAtrPct: pos.atrPct });
   }
 
-  const finalEquity = cash;
-  const stats = computeStats(trades, equityCurve, params.capital, finalEquity, dailyEquity, maxDrawdown, params);
-
+  const finalEquity = cash; const stats = computeStats(trades, equityCurve, params.capital, finalEquity, dailyEquity, maxDrawdown, params);
   return { trades, equityCurve, stats };
 }
 
 // ============================================================
-// 辅助函数（策略内部）
+// 辅助函数
 // ============================================================
-function getSlippage(symbol, params) {
-  if (FIXED_PARAMS.SLIP_LOW_MAP[symbol]) return params.slipLow / 100;
-  return params.slipHigh / 100;
-}
-
+function getSlippage(symbol, params) { if (FIXED_PARAMS.SLIP_LOW_MAP[symbol]) return params.slipLow / 100; return params.slipHigh / 100; }
 function getEffectiveStopPrice(entryPrice, currentPrice, highPrice, stopLossPct, pnlPct) {
-  if (pnlPct < FIXED_PARAMS.STAGE_BREAKEVEN_PCT) {
-    return { price: entryPrice * (1 - stopLossPct / 100), stage: '成本止损' };
-  }
-  if (pnlPct < FIXED_PARAMS.STAGE_LOCK_05_PCT) {
-    return { price: entryPrice, stage: '保本' };
-  }
-  if (pnlPct < FIXED_PARAMS.STAGE_LOCK_1_PCT) {
-    return { price: entryPrice * 1.005, stage: '锁定+0.5%' };
-  }
-  return {
-    price: Math.max(entryPrice * 1.01, highPrice * (1 - FIXED_PARAMS.TRAILING_STOP_PCT)),
-    stage: '锁定+1%+跟踪'
-  };
+  if (pnlPct < FIXED_PARAMS.STAGE_BREAKEVEN_PCT) return { price: entryPrice * (1 - stopLossPct / 100), stage: '成本止损' };
+  if (pnlPct < FIXED_PARAMS.STAGE_LOCK_05_PCT) return { price: entryPrice, stage: '保本' };
+  if (pnlPct < FIXED_PARAMS.STAGE_LOCK_1_PCT) return { price: entryPrice * 1.005, stage: '锁定+0.5%' };
+  return { price: Math.max(entryPrice * 1.01, highPrice * (1 - FIXED_PARAMS.TRAILING_STOP_PCT)), stage: '锁定+1%+跟踪' };
 }
-
-function getMaxDailyTrades(pnlPct) {
-  if (pnlPct < -1) return 0;
-  if (pnlPct < 0) return 1;
-  if (pnlPct < 1) return 3;
-  return 5;
-}
-
+function getMaxDailyTrades(pnlPct) { if (pnlPct < -1) return 0; if (pnlPct < 0) return 1; if (pnlPct < 1) return 3; return 5; }
 function simulateNews(symbol, msTs, rng, params) {
-  const windowKey = Math.floor(msTs / (15 * 60 * 1000));
-  const hashSeed = hashStr(symbol + '_' + windowKey);
-  const r = makeRng(hashSeed + params.seed)();
-  if (r < FIXED_PARAMS.NEWS_BULLISH_PROB) {
-    return { bullish: true, score: 0.5 + rng() * 0.4 };
-  } else if (r < FIXED_PARAMS.NEWS_BULLISH_PROB + FIXED_PARAMS.NEWS_BEARISH_PROB) {
-    return { bullish: false, score: 0.1 + rng() * 0.2 };
-  } else {
-    return { bullish: false, score: 0.2 + rng() * 0.2 };
-  }
+  const windowKey = Math.floor(msTs / (15 * 60 * 1000)); const hashSeed = hashStr(symbol + '_' + windowKey); const r = makeRng(hashSeed + params.seed)();
+  if (r < FIXED_PARAMS.NEWS_BULLISH_PROB) return { bullish: true, score: 0.5 + rng() * 0.4 };
+  else if (r < FIXED_PARAMS.NEWS_BULLISH_PROB + FIXED_PARAMS.NEWS_BEARISH_PROB) return { bullish: false, score: 0.1 + rng() * 0.2 };
+  else return { bullish: false, score: 0.2 + rng() * 0.2 };
 }
 
 // ============================================================
@@ -1028,154 +442,70 @@ function simulateNews(symbol, msTs, rng, params) {
 // ============================================================
 function computeStats(trades, equityCurve, initialCapital, finalEquity, dailyEquity, maxDrawdown, params) {
   const totalReturnPct = ((finalEquity - initialCapital) / initialCapital) * 100;
-  const wins = trades.filter(t => t.pnl > 0);
-  const losses = trades.filter(t => t.pnl < 0);
-  const totalWin = wins.reduce((s, t) => s + t.pnl, 0);
-  const totalLoss = losses.reduce((s, t) => s + t.pnl, 0);
+  const wins = trades.filter(t => t.pnl > 0); const losses = trades.filter(t => t.pnl < 0);
+  const totalWin = wins.reduce((s, t) => s + t.pnl, 0); const totalLoss = losses.reduce((s, t) => s + t.pnl, 0);
   const winRate = trades.length > 0 ? (wins.length / trades.length) * 100 : 0;
-  const avgWin = wins.length > 0 ? totalWin / wins.length : 0;
-  const avgLoss = losses.length > 0 ? totalLoss / losses.length : 0;
+  const avgWin = wins.length > 0 ? totalWin / wins.length : 0; const avgLoss = losses.length > 0 ? totalLoss / losses.length : 0;
   const profitFactor = avgLoss !== 0 ? Math.abs(avgWin / avgLoss) : 0;
   const avgPnL = trades.length > 0 ? trades.reduce((s, t) => s + t.pnl, 0) / trades.length : 0;
-
-  const dates = Object.keys(dailyEquity).sort();
-  const tradingDays = dates.length > 0 ? dates.length : Math.max(1, equityCurve.length / 78);
-  const years = tradingDays / 252;
-  const annualizedReturnPct = years > 0
-    ? (Math.pow(finalEquity / initialCapital, 1 / years) - 1) * 100
-    : 0;
-
-  const dailyReturns = [];
-  let prevEquity = initialCapital;
-  for (const d of dates) {
-    const eq = dailyEquity[d];
-    dailyReturns.push((eq - prevEquity) / prevEquity);
-    prevEquity = eq;
-  }
-
+  const dates = Object.keys(dailyEquity).sort(); const tradingDays = dates.length > 0 ? dates.length : Math.max(1, equityCurve.length / 78);
+  const years = tradingDays / 252; const annualizedReturnPct = years > 0 ? (Math.pow(finalEquity / initialCapital, 1 / years) - 1) * 100 : 0;
+  const dailyReturns = []; let prevEquity = initialCapital;
+  for (const d of dates) { const eq = dailyEquity[d]; dailyReturns.push((eq - prevEquity) / prevEquity); prevEquity = eq; }
   let sharpe = 0;
-  if (dailyReturns.length > 1) {
-    const mean = dailyReturns.reduce((s, r) => s + r, 0) / dailyReturns.length;
-    const variance = dailyReturns.reduce((s, r) => s + (r - mean) ** 2, 0) / (dailyReturns.length - 1);
-    const sd = Math.sqrt(variance);
-    if (sd > 0) sharpe = (mean / sd) * Math.sqrt(252);
-  }
-
+  if (dailyReturns.length > 1) { const mean = dailyReturns.reduce((s, r) => s + r, 0) / dailyReturns.length; const variance = dailyReturns.reduce((s, r) => s + (r - mean) ** 2, 0) / (dailyReturns.length - 1); const sd = Math.sqrt(variance); if (sd > 0) sharpe = (mean / sd) * Math.sqrt(252); }
   const calmar = maxDrawdown > 0 ? annualizedReturnPct / maxDrawdown : 0;
-
-  const byReason = {};
-  trades.forEach(t => {
-    if (!byReason[t.reason]) byReason[t.reason] = { count: 0, pnl: 0, wins: 0 };
-    byReason[t.reason].count++;
-    byReason[t.reason].pnl += t.pnl;
-    if (t.pnl > 0) byReason[t.reason].wins++;
-  });
-
-  const bySymbol = {};
-  trades.forEach(t => {
-    if (!bySymbol[t.symbol]) bySymbol[t.symbol] = { count: 0, pnl: 0, wins: 0 };
-    bySymbol[t.symbol].count++;
-    bySymbol[t.symbol].pnl += t.pnl;
-    if (t.pnl > 0) bySymbol[t.symbol].wins++;
-  });
-
-  const avgHoldMin = trades.length > 0
-    ? trades.reduce((s, t) => s + (t.exitTime - t.entryTime) / 60000, 0) / trades.length
-    : 0;
-
-  return {
-    finalEquity, totalReturnPct, annualizedReturnPct, maxDrawdown,
-    winRate, profitFactor, avgWin, avgLoss, avgPnL, sharpe, calmar,
-    totalTrades: trades.length, wins: wins.length, losses: losses.length,
-    avgHoldMin, tradingDays, byReason, bySymbol
-  };
+  const byReason = {}; trades.forEach(t => { if (!byReason[t.reason]) byReason[t.reason] = { count: 0, pnl: 0, wins: 0 }; byReason[t.reason].count++; byReason[t.reason].pnl += t.pnl; if (t.pnl > 0) byReason[t.reason].wins++; });
+  const bySymbol = {}; trades.forEach(t => { if (!bySymbol[t.symbol]) bySymbol[t.symbol] = { count: 0, pnl: 0, wins: 0 }; bySymbol[t.symbol].count++; bySymbol[t.symbol].pnl += t.pnl; if (t.pnl > 0) bySymbol[t.symbol].wins++; });
+  const avgHoldMin = trades.length > 0 ? trades.reduce((s, t) => s + (t.exitTime - t.entryTime) / 60000, 0) / trades.length : 0;
+  return { finalEquity, totalReturnPct, annualizedReturnPct, maxDrawdown, winRate, profitFactor, avgWin, avgLoss, avgPnL, sharpe, calmar, totalTrades: trades.length, wins: wins.length, losses: losses.length, avgHoldMin, tradingDays, byReason, bySymbol };
 }
 
 // ============================================================
 // 主流程
 // ============================================================
 async function runFullBacktest() {
-  const startDate = document.getElementById('startDate').value;
-  const endDate = document.getElementById('endDate').value;
-  const symbols = getSelectedSymbols();
-
-  if (!startDate || !endDate) { alert('请选择日期'); return; }
-  if (symbols.length === 0) { alert('请选择至少一只股票'); return; }
+  const startDate = document.getElementById('startDate').value; const endDate = document.getElementById('endDate').value; const symbols = getSelectedSymbols();
+  if (!startDate || !endDate) { alert('请选择日期'); return; } if (symbols.length === 0) { alert('请选择至少一只股票'); return; }
 
   const params = {
-    capital: parseFloat(document.getElementById('p_capital').value),
-    baseSize: parseFloat(document.getElementById('p_baseSize').value),
-    partialTP: parseFloat(document.getElementById('p_partialTP').value),
-    trailRetreat: parseFloat(document.getElementById('p_trailRetreat').value),
-    fixedTP: parseFloat(document.getElementById('p_fixedTP').value),
-    addTrigger: parseFloat(document.getElementById('p_addTrigger').value),
-    addSize: parseFloat(document.getElementById('p_addSize').value),
-    maxExposure: parseFloat(document.getElementById('p_maxExposure').value),
-    maxTotal: parseFloat(document.getElementById('p_maxTotal').value),
-    maxPositions: parseInt(document.getElementById('p_maxPositions').value),
-    momentum: parseFloat(document.getElementById('p_momentum').value),
-    atrThreshold: parseFloat(document.getElementById('p_atrThreshold').value),
-    timeStop: parseInt(document.getElementById('p_timeStop').value),
-    circuit: parseFloat(document.getElementById('p_circuit').value),
-    forceClose: parseInt(document.getElementById('p_forceClose').value),
-    tf: parseInt(document.getElementById('p_tf').value),
-    slipLow: parseFloat(document.getElementById('p_slipLow').value),
-    slipHigh: parseFloat(document.getElementById('p_slipHigh').value),
+    capital: parseFloat(document.getElementById('p_capital').value), baseSize: parseFloat(document.getElementById('p_baseSize').value),
+    partialTP: parseFloat(document.getElementById('p_partialTP').value), trailRetreat: parseFloat(document.getElementById('p_trailRetreat').value),
+    fixedTP: parseFloat(document.getElementById('p_fixedTP').value), addTrigger: parseFloat(document.getElementById('p_addTrigger').value),
+    addSize: parseFloat(document.getElementById('p_addSize').value), maxExposure: parseFloat(document.getElementById('p_maxExposure').value),
+    maxTotal: parseFloat(document.getElementById('p_maxTotal').value), maxPositions: parseInt(document.getElementById('p_maxPositions').value),
+    momentum: parseFloat(document.getElementById('p_momentum').value), atrThreshold: parseFloat(document.getElementById('p_atrThreshold').value),
+    timeStop: parseInt(document.getElementById('p_timeStop').value), circuit: parseFloat(document.getElementById('p_circuit').value),
+    forceClose: parseInt(document.getElementById('p_forceClose').value), tf: parseInt(document.getElementById('p_tf').value),
+    slipLow: parseFloat(document.getElementById('p_slipLow').value), slipHigh: parseFloat(document.getElementById('p_slipHigh').value),
     seed: parseInt(document.getElementById('p_seed').value)
   };
 
   document.getElementById('btnRun').disabled = true;
-  const progress = document.getElementById('progress');
-  const progressText = document.getElementById('progressText');
-  const progressFill = document.getElementById('progressFill');
-  progress.style.display = 'block';
-  document.getElementById('resultArea').innerHTML = '';
+  const progress = document.getElementById('progress'); const progressText = document.getElementById('progressText'); const progressFill = document.getElementById('progressFill');
+  progress.style.display = 'block'; document.getElementById('resultArea').innerHTML = '';
 
   try {
-    const startISO = new Date(startDate + 'T00:00:00Z').toISOString();
-    const endISO = new Date(new Date(endDate).getTime() + 24 * 3600 * 1000).toISOString();
-
-    const dataMap = {};
-    const totalTasks = symbols.length + 1;
-    let done = 0;
-
+    const startISO = new Date(startDate + 'T00:00:00Z').toISOString(); const endISO = new Date(new Date(endDate).getTime() + 24 * 3600 * 1000).toISOString();
+    const dataMap = {}; const totalTasks = symbols.length + 1; let done = 0;
     for (const sym of symbols) {
-      progressText.textContent = `拉取 ${sym} 历史K线...`;
-      progressFill.style.width = `${(done / totalTasks) * 100}%`;
-      dataMap[sym] = await fetchAllBars(sym, params.tf, startISO, endISO, (p, c) => {
-        progressText.textContent = `拉取 ${sym} 第${p}页（${c}根）...`;
-      });
+      progressText.textContent = `拉取 ${sym} 历史K线...`; progressFill.style.width = `${(done / totalTasks) * 100}%`;
+      dataMap[sym] = await fetchAllBars(sym, params.tf, startISO, endISO, (p, c) => { progressText.textContent = `拉取 ${sym} 第${p}页（${c}根）...`; });
       done++;
     }
-
-    progressText.textContent = `拉取 ${MARKET_SYMBOL} 市场参考数据...`;
-    progressFill.style.width = `${(done / totalTasks) * 100}%`;
-    const marketBars = await fetchAllBars(MARKET_SYMBOL, params.tf, startISO, endISO);
-    done++;
-
-    progressText.textContent = '运行回测...';
-    progressFill.style.width = '80%';
-    await new Promise(r => setTimeout(r, 100));
+    progressText.textContent = `拉取 ${MARKET_SYMBOL} 市场参考数据...`; progressFill.style.width = `${(done / totalTasks) * 100}%`;
+    const marketBars = await fetchAllBars(MARKET_SYMBOL, params.tf, startISO, endISO); done++;
+    progressText.textContent = '运行回测...'; progressFill.style.width = '80%'; await new Promise(r => setTimeout(r, 100));
 
     const result = backtest(dataMap, marketBars, params);
+    progressFill.style.width = '100%'; progressText.textContent = '完成';
 
-    progressFill.style.width = '100%';
-    progressText.textContent = '完成';
-
-    if (!result || result.trades.length === 0) {
-      document.getElementById('resultArea').innerHTML =
-        '<div class="error">回测期间无交易产生，或数据不足。请检查日期范围与标的。</div>';
-      return;
-    }
-
+    if (!result || result.trades.length === 0) { document.getElementById('resultArea').innerHTML = '<div class="error">回测期间无交易产生，或数据不足。</div>'; return; }
     renderResult(result, params, symbols, dataMap);
-
   } catch (e) {
-    console.error(e);
-    document.getElementById('resultArea').innerHTML = `<div class="error">回测错误：${e.message}</div>`;
+    console.error(e); document.getElementById('resultArea').innerHTML = `<div class="error">回测错误：${e.message}</div>`;
   } finally {
-    document.getElementById('btnRun').disabled = false;
-    setTimeout(() => { progress.style.display = 'none'; }, 1500);
+    document.getElementById('btnRun').disabled = false; setTimeout(() => { progress.style.display = 'none'; }, 1500);
   }
 }
 
@@ -1183,14 +513,8 @@ async function runFullBacktest() {
 // 渲染结果
 // ============================================================
 function renderResult(result, params, symbols, dataMap) {
-  const s = result.stats;
-  const area = document.getElementById('resultArea');
-  const cls = v => v >= 0 ? 'profit' : 'loss';
-
-  let html = '';
-
-  // ===== 绩效卡片 =====
-  html += '<h2>整体绩效</h2>';
+  const s = result.stats; const area = document.getElementById('resultArea'); const cls = v => v >= 0 ? 'profit' : 'loss';
+  let html = '<h2>整体绩效</h2>';
   html += '<div class="stats-grid">';
   html += `<div class="stat-card"><div class="stat-label">最终权益</div><div class="stat-value">$${s.finalEquity.toFixed(2)}</div></div>`;
   html += `<div class="stat-card"><div class="stat-label">总收益率</div><div class="stat-value ${cls(s.totalReturnPct)}">${fmtPct(s.totalReturnPct)}</div></div>`;
@@ -1206,7 +530,6 @@ function renderResult(result, params, symbols, dataMap) {
   html += `<div class="stat-card"><div class="stat-label">平均持仓</div><div class="stat-value">${s.avgHoldMin.toFixed(0)}分钟</div></div>`;
   html += '</div>';
 
-  // 当前配置摘要
   const cfgLines = [];
   cfgLines.push(`标的：${symbols.join('、')}`);
   cfgLines.push(`部分止盈：${params.partialTP}%`);
@@ -1217,142 +540,53 @@ function renderResult(result, params, symbols, dataMap) {
   cfgLines.push(`动量阈值：${params.momentum}% / ATR阈值：${params.atrThreshold}%`);
   cfgLines.push(`时间止损：${params.timeStop}分钟 / 熔断：${params.circuit}%`);
   cfgLines.push(`随机种子：${params.seed}`);
+  html += `<div class="hint" style="margin-top:10px;"><strong>当前配置：</strong>${cfgLines.join(' | ')}</div>`;
 
-  html += `<div class="hint" style="margin-top:10px;">
-    <strong>当前配置：</strong>${cfgLines.join(' | ')}
-  </div>`;
+  html += '<h2>权益曲线与价格</h2><div class="chart-wrap"><div id="equityChart"></div><div id="priceChart"></div></div>';
 
-  // 图表
-  html += '<h2>权益曲线与价格</h2>';
-  html += '<div class="chart-wrap"><div id="equityChart"></div><div id="priceChart"></div></div>';
-
-  // 按标的统计
-  html += '<h2>按标的统计</h2><table>';
-  html += '<thead><tr><th>标的</th><th>交易次数</th><th>胜率</th><th>总盈亏</th></tr></thead><tbody>';
+  html += '<h2>按标的统计</h2><table><thead><tr><th>标的</th><th>交易次数</th><th>胜率</th><th>总盈亏</th></tr></thead><tbody>';
   Object.entries(s.bySymbol).sort((a, b) => b[1].pnl - a[1].pnl).forEach(([sym, d]) => {
-    html += `<tr>
-      <td><strong>${sym}</strong></td>
-      <td>${d.count}</td>
-      <td class="${d.wins / d.count >= 0.5 ? 'profit' : 'loss'}">${((d.wins / d.count) * 100).toFixed(1)}%</td>
-      <td class="${cls(d.pnl)}">${fmtMoney(d.pnl)}</td>
-    </tr>`;
+    html += `<tr><td><strong>${sym}</strong></td><td>${d.count}</td><td class="${d.wins / d.count >= 0.5 ? 'profit' : 'loss'}">${((d.wins / d.count) * 100).toFixed(1)}%</td><td class="${cls(d.pnl)}">${fmtMoney(d.pnl)}</td></tr>`;
   });
   html += '</tbody></table>';
 
-  // 按出场原因统计
-  html += '<h2>按出场原因统计</h2><table>';
-  html += '<thead><tr><th>原因</th><th>次数</th><th>胜率</th><th>总盈亏</th></tr></thead><tbody>';
+  html += '<h2>按出场原因统计</h2><table><thead><tr><th>原因</th><th>次数</th><th>胜率</th><th>总盈亏</th></tr></thead><tbody>';
   Object.entries(s.byReason).sort((a, b) => b[1].count - a[1].count).forEach(([r, d]) => {
-    const tagCls = r.includes('止损') ? 'tag-stop'
-      : r.includes('跟踪') ? 'tag-trail'
-      : r.includes('部分') || r.includes('固定') ? 'tag-tp'
-      : r.includes('时间') ? 'tag-time'
-      : r.includes('新闻') || r.includes('反向') ? 'tag-news'
-      : 'tag-eod';
-    html += `<tr>
-      <td><span class="tag ${tagCls}">${r}</span></td>
-      <td>${d.count}</td>
-      <td class="${d.wins / d.count >= 0.5 ? 'profit' : 'loss'}">${((d.wins / d.count) * 100).toFixed(1)}%</td>
-      <td class="${cls(d.pnl)}">${fmtMoney(d.pnl)}</td>
-    </tr>`;
+    const tagCls = r.includes('止损') ? 'tag-stop' : r.includes('跟踪') ? 'tag-trail' : r.includes('部分') || r.includes('固定') ? 'tag-tp' : r.includes('时间') ? 'tag-time' : r.includes('新闻') || r.includes('反向') ? 'tag-news' : 'tag-eod';
+    html += `<tr><td><span class="tag ${tagCls}">${r}</span></td><td>${d.count}</td><td class="${d.wins / d.count >= 0.5 ? 'profit' : 'loss'}">${((d.wins / d.count) * 100).toFixed(1)}%</td><td class="${cls(d.pnl)}">${fmtMoney(d.pnl)}</td></tr>`;
   });
   html += '</tbody></table>';
 
-  // 交易明细（最近50笔）
   const recentTrades = result.trades.slice(-50).reverse();
-  html += '<h2>交易明细（最近50笔）</h2><table>';
-  html += '<thead><tr><th>入场时间</th><th>出场时间</th><th>标的</th><th>股数</th><th>入场价</th><th>出场价</th><th>盈亏</th><th>盈亏%</th><th>出场原因</th></tr></thead><tbody>';
+  html += '<h2>交易明细（最近50笔）</h2><table><thead><tr><th>入场时间</th><th>出场时间</th><th>标的</th><th>股数</th><th>入场价</th><th>出场价</th><th>盈亏</th><th>盈亏%</th><th>出场原因</th></tr></thead><tbody>';
   for (const t of recentTrades) {
-    const reasonCls = t.reason.includes('止损') ? 'tag-stop'
-      : t.reason.includes('跟踪') ? 'tag-trail'
-      : t.reason.includes('部分') || t.reason.includes('固定') ? 'tag-tp'
-      : t.reason.includes('时间') ? 'tag-time'
-      : t.reason.includes('新闻') ? 'tag-news'
-      : 'tag-eod';
-    html += `<tr>
-      <td>${toEtTimeStr(t.entryTime)}</td>
-      <td>${toEtTimeStr(t.exitTime)}</td>
-      <td><strong>${t.symbol}</strong></td>
-      <td>${t.qty.toFixed(4)}</td>
-      <td>$${t.entryPrice.toFixed(2)}</td>
-      <td>$${t.exitPrice.toFixed(2)}</td>
-      <td class="${cls(t.pnl)}">${fmtMoney(t.pnl)}</td>
-      <td class="${cls(t.pnlPct)}">${fmtPct(t.pnlPct)}</td>
-      <td><span class="tag ${reasonCls}">${t.reason}</span></td>
-    </tr>`;
+    const reasonCls = t.reason.includes('止损') ? 'tag-stop' : t.reason.includes('跟踪') ? 'tag-trail' : t.reason.includes('部分') || t.reason.includes('固定') ? 'tag-tp' : t.reason.includes('时间') ? 'tag-time' : t.reason.includes('新闻') ? 'tag-news' : 'tag-eod';
+    html += `<tr><td>${toEtTimeStr(t.entryTime)}</td><td>${toEtTimeStr(t.exitTime)}</td><td><strong>${t.symbol}</strong></td><td>${t.qty.toFixed(4)}</td><td>$${t.entryPrice.toFixed(2)}</td><td>$${t.exitPrice.toFixed(2)}</td><td class="${cls(t.pnl)}">${fmtMoney(t.pnl)}</td><td class="${cls(t.pnlPct)}">${fmtPct(t.pnlPct)}</td><td><span class="tag ${reasonCls}">${t.reason}</span></td></tr>`;
   }
   html += '</tbody></table>';
 
-  html += `<div class="hint">
-    <strong>说明：</strong><br>
-    1. 新闻情绪用随机模拟（20%看涨概率 + 10%看跌概率），不反映真实新闻。因此回测结果主要反映<strong>技术面和风控逻辑</strong>的表现。<br>
-    2. 权益曲线为事件时间点上的账户总权益（现金 + 持仓市值）。<br>
-    3. 夏普比率基于日收益序列计算，年化乘以 √252。<br>
-    4. 回测剔除了盘后入场，允许盘后出场，与实盘一致。<br>
-    5. 数据来源：Alpaca IEX，可能存在个别缺失时段。<br>
-    6. 若固定止盈 &gt; 0 且跟踪回撤 = 0，则部分止盈后的剩余仓位使用固定止盈。
-  </div>`;
+  html += `<div class="hint"><strong>说明：</strong><br>1. 新闻情绪用随机模拟（20%看涨概率 + 10%看跌概率）。<br>2. 权益曲线为事件时间点上的账户总权益。<br>3. 夏普比率基于日收益序列计算，年化乘以 √252。<br>4. 回测剔除了盘后入场，允许盘后出场。<br>5. 数据来源：Alpaca IEX。<br>6. 若固定止盈 > 0 且跟踪回撤 = 0，则部分止盈后的剩余仓位使用固定止盈。</div>`;
 
-  area.innerHTML = html;
-
-  requestAnimationFrame(() => renderCharts(result, symbols, dataMap));
+  area.innerHTML = html; requestAnimationFrame(() => renderCharts(result, symbols, dataMap));
 }
 
 // ============================================================
 // 图表
 // ============================================================
 function renderCharts(result, symbols, dataMap) {
-  // 权益曲线
-  const eqEl = document.getElementById('equityChart');
-  if (!eqEl) return;
-  const eqChart = LightweightCharts.createChart(eqEl, {
-    layout: { background: { color: '#161b22' }, textColor: '#8b949e' },
-    grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
-    timeScale: { timeVisible: true, secondsVisible: false },
-    rightPriceScale: { borderColor: '#30363d' },
-  });
-  const eqSeries = eqChart.addLineSeries({ color: '#58a6ff', lineWidth: 2 });
-  eqSeries.setData(result.equityCurve.map(p => ({ time: p.time, value: p.value })));
-  eqChart.timeScale().fitContent();
-
-  // 交易标记
+  const eqEl = document.getElementById('equityChart'); if (!eqEl) return;
+  const eqChart = LightweightCharts.createChart(eqEl, { layout: { background: { color: '#161b22' }, textColor: '#8b949e' }, grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } }, timeScale: { timeVisible: true, secondsVisible: false }, rightPriceScale: { borderColor: '#30363d' } });
+  const eqSeries = eqChart.addLineSeries({ color: '#58a6ff', lineWidth: 2 }); eqSeries.setData(result.equityCurve.map(p => ({ time: p.time, value: p.value }))); eqChart.timeScale().fitContent();
   const markers = [];
-  for (const t of result.trades) {
-    if (t.reason === '部分止盈') continue;
-    markers.push({
-      time: Math.floor(t.exitTime / 1000),
-      position: 'aboveBar',
-      color: t.pnl >= 0 ? '#3fb950' : '#f85149',
-      shape: t.pnl >= 0 ? 'arrowUp' : 'arrowDown',
-      text: t.symbol + '出场'
-    });
-  }
+  for (const t of result.trades) { if (t.reason === '部分止盈') continue; markers.push({ time: Math.floor(t.exitTime / 1000), position: 'aboveBar', color: t.pnl >= 0 ? '#3fb950' : '#f85149', shape: t.pnl >= 0 ? 'arrowUp' : 'arrowDown', text: t.symbol + '出场' }); }
   eqSeries.setMarkers(markers);
+  const ro = new ResizeObserver(() => { eqChart.applyOptions({ width: eqEl.clientWidth, height: eqEl.clientHeight }); }); ro.observe(eqEl);
 
-  const ro = new ResizeObserver(() => {
-    eqChart.applyOptions({ width: eqEl.clientWidth, height: eqEl.clientHeight });
-  });
-  ro.observe(eqEl);
-
-  // 价格图（用第一个标的）
-  const prEl = document.getElementById('priceChart');
-  if (!prEl) return;
-  const prChart = LightweightCharts.createChart(prEl, {
-    layout: { background: { color: '#161b22' }, textColor: '#8b949e' },
-    grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
-    timeScale: { timeVisible: true, secondsVisible: false },
-    rightPriceScale: { borderColor: '#30363d' },
-  });
-  const prSeries = prChart.addLineSeries({ color: '#d29922', lineWidth: 1 });
-  const firstSym = symbols[0];
-  const firstBars = dataMap[firstSym];
-  prSeries.setData(firstBars.map(b => ({ time: Math.floor(b.time / 1000), value: b.close })));
-  prChart.timeScale().fitContent();
-
-  const ro2 = new ResizeObserver(() => {
-    prChart.applyOptions({ width: prEl.clientWidth, height: prEl.clientHeight });
-  });
-  ro2.observe(prEl);
+  const prEl = document.getElementById('priceChart'); if (!prEl) return;
+  const prChart = LightweightCharts.createChart(prEl, { layout: { background: { color: '#161b22' }, textColor: '#8b949e' }, grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } }, timeScale: { timeVisible: true, secondsVisible: false }, rightPriceScale: { borderColor: '#30363d' } });
+  const prSeries = prChart.addLineSeries({ color: '#d29922', lineWidth: 1 }); const firstSym = symbols[0]; const firstBars = dataMap[firstSym];
+  prSeries.setData(firstBars.map(b => ({ time: Math.floor(b.time / 1000), value: b.close }))); prChart.timeScale().fitContent();
+  const ro2 = new ResizeObserver(() => { prChart.applyOptions({ width: prEl.clientWidth, height: prEl.clientHeight }); }); ro2.observe(prEl);
 }
 </script>
 </body>
